@@ -5,6 +5,7 @@ Base = declarative_base()
 
 class DocumentExtraction(Base):
     __tablename__ = "document_extractions"
+    __table_args__ = {"schema": "idp_smart"}
     
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(String(255), unique=True, index=True, nullable=False)
@@ -15,3 +16,4 @@ class DocumentExtraction(Base):
     status = Column(String(50), default="PROCESSING")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+

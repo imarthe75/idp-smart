@@ -18,6 +18,7 @@ app = FastAPI(
 async def startup_event():
     # Attempt to create tables if they do not exist
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS idp_smart"))
         await conn.run_sync(Base.metadata.create_all)
         
 @app.get("/")
@@ -97,7 +98,7 @@ async def get_status(task_id: str, db: AsyncSession = Depends(get_db)):
     """
     Check the status of an ongoing IDP extraction task directly from the Database.
     """
-    query = text("SELECT * FROM document_extractions WHERE task_id = :task_id")
+    query = text("SELECT * FROM idp_smart.document_extractions WHERE task_id = :task_id")
     result = await db.execute(query, {"task_id": task_id})
     row = result.fetchone()
     

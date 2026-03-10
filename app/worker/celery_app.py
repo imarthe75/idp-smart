@@ -61,7 +61,7 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str):
     print(f"[{task_id}] Updating Result in Database...")
     with db_engine.begin() as conn:
         conn.execute(
-            text("UPDATE document_extractions SET status = 'COMPLETED', extracted_data = :data WHERE task_id = :task_id"),
+            text("UPDATE idp_smart.document_extractions SET status = 'COMPLETED', extracted_data = :data WHERE task_id = :task_id"),
             {"data": json.dumps(final_json), "task_id": task_id}
         )
     
