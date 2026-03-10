@@ -56,14 +56,14 @@ async def get_pre_coded_forms(db: AsyncSession = Depends(get_db)):
     """
     query = text("""
         SELECT 
-            f.lldeffrmpre     AS form_code,
-            a.dsactocorta,
-            a.dsacto,
-            CONCAT(a.dsactocorta, ' - ', a.dsacto) AS display_label
-        FROM public.cfdeffrmpre f
-        INNER JOIN public.ctactos a ON a.llacto = f.llacto
-        WHERE f.jsconfforma IS NOT NULL
-        ORDER BY a.dsactocorta ASC
+            form_code,
+            lldeffrmpre,
+            llacto,
+            dsactocorta,
+            dsacto,
+            CONCAT(dsactocorta, ' - ', dsacto) AS display_label
+        FROM idp_smart.act_forms_catalog
+        ORDER BY dsactocorta ASC
     """)
     result = await db.execute(query)
 

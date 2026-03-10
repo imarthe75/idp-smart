@@ -8,6 +8,20 @@ services:
       - "6379:6379"
     restart: always
 
+  db:
+    image: postgres:16
+    container_name: idp_db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=admin_user
+      - POSTGRES_PASSWORD=Ad54=Tx91.Vm+23_Qr78
+      - POSTGRES_DB=rpp_qa
+    volumes:
+      - ./db/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
   minio:
     image: minio/minio:latest
     container_name: idp_minio
@@ -31,7 +45,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DB_HOST=host.docker.internal
+      - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=admin_user
       - DB_PASSWORD=Ad54=Tx91.Vm+23_Qr78
@@ -44,6 +58,7 @@ services:
     depends_on:
       - valkey
       - minio
+      - db
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -54,7 +69,7 @@ services:
     volumes:
       - ./app:/app
     environment:
-      - DB_HOST=host.docker.internal
+      - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=admin_user
       - DB_PASSWORD=Ad54=Tx91.Vm+23_Qr78
@@ -67,6 +82,7 @@ services:
     depends_on:
       - valkey
       - minio
+      - db
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -84,4 +100,5 @@ services:
 
 volumes:
   minio_data:
+  postgres_data:
 
