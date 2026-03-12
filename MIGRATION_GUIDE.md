@@ -2,13 +2,29 @@
 
 ## Descripción General
 
-Esta migración reemplaza **Ollama** por **LocalAI**, proporcionando:
+Esta migración reemplaza **Ollama** por **LocalAI** como servicio LLM central, integrando el pipeline completo de extracción:
 
-- ✅ **Control granular sobre backends** (ONNX, OpenVINO, CUDA)
-- ✅ **API compatible con OpenAI** (esquema bi34.json preservado)
-- ✅ **Mejor optimización de hardware** (CPU/GPU automática)
-- ✅ **Temperatura controlada** (0.1) para extracciones legales precisas
-- ✅ **Context size expandido** (8192 tokens vs tradicional 4096)
+```
+Documento (PDF/IMG)
+    ↓
+Docling (OCR & Layout Analysis)
+    ↓
+Granite-Vision (VLM - Extracción Multimodal)
+    ↓
+LocalAI (LLM Service - OpenAI Compatible)
+    ↓
+act_forms_catalog (Múltiples esquemas dinámicos)
+    ↓
+Datos Estructurados JSON
+```
+
+**Beneficios de la migración:**
+- ✅ **Control granular sobre backends** (CUDA, OpenVINO, ONNX)
+- ✅ **API OpenAI compatible** (se adapta a múltiples esquemas de `act_forms_catalog`)
+- ✅ **Mejor optimización de hardware** (detección automática CPU/GPU)
+- ✅ **Temperatura controlada** (0.1) para precisión en documentos legales
+- ✅ **Context size expandido** (8192 tokens - documentos más largos)
+- ✅ **Soporte multi-esquema** (BI1, BI34, BI58, BI32, etc. en paralelo)
 
 ---
 
@@ -227,9 +243,11 @@ print(response.content)
 
 ## 🔄 Compatibilidad con Código Existente
 
+## 🔄 Compatibilidad con Código Existente
+
 ### Cambios en `app/engine/agent.py`
 
-El código ya ha sido actualizado automáticamente:
+El código ya ha sido actualizado automáticamente para soportar **múltiples esquemas dinámicos** desde `act_forms_catalog`:
 
 ```python
 from langchain_openai import ChatOpenAI
@@ -243,6 +261,16 @@ def get_llm():
             temperature=settings.localai_temperature,
             max_tokens=settings.localai_max_tokens
         )
+
+def extract_form_data(markdown_text: str, json_form_schema: dict) -> dict:
+    """
+    Extrae datos de un documento utilizando el esquema dinámico 
+    proveniente de act_forms_catalog.
+    
+    Soporta múltiples tipos de actos:
+    - BI1, BI34, BI58, BI32, BI6, etc.
+    - Cada uno con su estructura JSON única
+    """
 ```
 
 ### Cambios en `app/core/config.py`
@@ -252,17 +280,34 @@ Nuevas variables de configuración:
 ```python
 localai_base_url: str = "http://localhost:8080/v1"
 localai_model: str = "granite-vision"
-localai_temperature: float = 0.1
-localai_context_size: int = 8192
-localai_max_tokens: int = 2048
+localai_temperature: float = 0.1  # Para precisión legal
+localai_context_size: int = 8192  # Documentos extensos
 ```
 
-### Esquema JSON (bi34.json) - SIN CAMBIOS
+### Esquemas Dinámicos (act_forms_catalog) - SIN CAMBIOS
 
-La API de LocalAI es 100% compatible con OpenAI, por lo que:
-- ✅ El esquema JSON existente funciona sin cambios
-- ✅ La función `extract_form_data()` es compatible
-- ✅ Las respuestas tienen el mismo formato
+La arquitectura soporta múltiples esquemas simultáneamente:
+
+```
+La tabla act_forms_catalog contiene:
+├─ form_code: BI1, BI34, BI58, BI32, etc.
+├─ llacto: ID del tipo de acto
+├─ dsacto: Descripción (ej: "Traslativo de dominio")
+└─ jsconfforma: esquema JSON dinámico
+
+Python accede dinámicamente:
+>>> cursor.execute(
+...     "SELECT jsconfforma FROM act_forms_catalog WHERE form_code = %s",
+...     (form_code,)
+... )
+>>> schema = json.loads(result['jsconfforma'])
+>>> extracted_data = extract_form_data(doc_text, schema)
+```
+
+La API de LocalAI es 100% compatible con múltiples esquemas simultáneamente:
+- ✅ Procesa documentos con diferentes estructuras
+- ✅ Adapta la extracción según el esquema dinámico
+- ✅ No requiere cambios en lógica de formularios
 
 ---
 

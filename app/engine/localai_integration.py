@@ -3,7 +3,15 @@ LocalAI Integration Examples for LangChain
 ==========================================
 
 Este módulo proporciona ejemplos de integración de LocalAI con LangChain
-manteniendo compatibilidad total con el esquema bi34.json existente.
+para procesar múltiples esquemas dinámicos obtenidos de act_forms_catalog.
+
+Soporta tipos de actos mexicanos variados:
+- BI1, BI34, BI58, BI32, BI6, BI26, BI4, BI16, BI49, etc.
+
+Pipeline:
+1. Docling: Extrae texto y estructura del documento (PDF/IMG)
+2. Granite Vision: Análisis multimodal del contenido
+3. LocalAI: Extracción estructurada según esquema dinámico de act_forms_catalog
 
 Última actualización: Marzo 2026
 """
@@ -69,26 +77,29 @@ def extract_structured_data(
     """
     Extrae datos estructurados de un documento legal mexicano.
     
-    Compatible con el esquema bi34.json existente.
+    Soporta múltiples esquemas dinámicos provenientes de act_forms_catalog:
+    - BI1 (Traslativo de dominio)
+    - BI34 (Constitución de patrimonio familiar)
+    - BI58 (Traslativo de primera inscripción)
+    - BI32 (Subdivisión)
+    - BI6 (Adjudicación por remate)
+    - Y otros tipos de actos mexicanos
     
     Args:
         document_text: Contenido del documento (Markdown o texto plano)
-        form_schema: Esquema JSON del formulario con UUIDs
+        form_schema: Esquema JSON dinámico de act_forms_catalog[jsconfforma]
         custom_instructions: Instrucciones adicionales (opcional)
     
     Returns:
         Dict: Datos extraídos con estructura de UUIDs
         
     Example:
-        >>> schema = {
-        ...     "d1c4f9e0-1a3b-4c5d-8e7f-a9b0c1d2e3f4": {
-        ...         "type": "text",
-        ...         "label": "Nombre del Acta",
-        ...         "value": None
-        ...     }
-        ... }
+        >>> import json
+        >>> from db import get_catalog_schema
+        >>> 
+        >>> schema = get_catalog_schema("BI34")  # Obtener de act_forms_catalog
         >>> result = extract_structured_data(doc_text, schema)
-        >>> print(result["d1c4f9e0-1a3b-4c5d-8e7f-a9b0c1d2e3f4"]["value"])
+        >>> print(result["uuid"]["value"])  # Acceder según estructura dinámica
     """
     
     llm = init_localai_llm()
@@ -225,24 +236,27 @@ def batch_extract_forms(
     max_workers: int = 4
 ) -> List[Dict]:
     """
-    Procesa múltiples documentos en paralelo (para 100 formularios).
+    Procesa múltiples documentos en paralelo (para 100+ formularios).
+    
+    Cada documento puede tener un esquema diferente proveniente de act_forms_catalog.
     
     Args:
         documents: Lista de diccionarios con keys 'id' y 'content'
-        form_schema: Esquema común para todos los documentos
-        max_workers: Número de workers paralelos
+                   Cada uno con esquema potencialmente diferente
+        form_schema: Esquema común (si aplica) o sobrescribible por documento
+        max_workers: Número de workers paralelos (recomendado: cores disponibles / 2)
     
     Returns:
         List[Dict]: Resultados de extracción para cada documento
         
     Example:
         >>> docs = [
-        ...     {"id": "form_001", "content": "Acta de venta..."},
-        ...     {"id": "form_002", "content": "Escritura pública..."}
+        ...     {"id": "BI1_001", "content": "Documento BI1...", "schema": schema_bi1},
+        ...     {"id": "BI34_002", "content": "Documento BI34...", "schema": schema_bi34}
         ... ]
-        >>> results = batch_extract_forms(docs, schema, max_workers=4)
+        >>> results = batch_extract_forms(docs, form_schema=None, max_workers=4)
         >>> for r in results:
-        ...     print(f"{r['id']}: {r['success']}")
+        ...     print(f"{r['id']}: {'✓' if r['success'] else '✗'}")
     """
     
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -368,11 +382,11 @@ if __name__ == "__main__":
     
     # Test 2: Extracción simple
     print("=" * 60)
-    print("TEST 2: Extracción de datos simples")
+    print("TEST 2: Extracción de datos (Multi-Esquema act_forms_catalog)")
     print("=" * 60)
     
     test_doc = """
-    ACTA DE VENTA Y COMPRA
+    ACTA DE VENTA Y COMPRA (BI1 - Traslativo de dominio)
     Número: 12345
     Fecha: 15 de marzo de 2026
     Notario: Lic. Juan Pérez García
@@ -385,12 +399,14 @@ if __name__ == "__main__":
     Propiedad ubicada en Avenida Paseo de la Reforma 505, CDMX
     """
     
+    # Simular esquema dinámico de act_forms_catalog
     test_schema = {
         "acta_numero": {"type": "text", "label": "Número de Acta"},
         "acta_fecha": {"type": "date", "label": "Fecha"},
         "notario_nombre": {"type": "text", "label": "Nombre del Notario"},
         "vendedor_nombre": {"type": "text", "label": "Nombre Vendedor"},
-        "comprador_nombre": {"type": "text", "label": "Nombre Comprador"}
+        "comprador_nombre": {"type": "text", "label": "Nombre Comprador"},
+        "bien_ubicacion": {"type": "text", "label": "Ubicación del Bien"}
     }
     
     try:

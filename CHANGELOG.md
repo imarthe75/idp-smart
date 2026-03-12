@@ -7,17 +7,18 @@
 
 ## 📊 Resumen Ejecutivo
 
-Se ha completado la migración de **Ollama** a **LocalAI** con los siguientes objetivos alcanzados:
+Se ha completado la migración de **Ollama** a **LocalAI** como servicio LLM central, integrando el pipeline completo de extracción multi-esquema desde `act_forms_catalog`:
 
 | Objetivo | Status | Detalles |
 |----------|--------|----------|
 | ✅ Control granular backend | Completado | CUDA, OpenVINO, ONNX soportados |
 | ✅ API OpenAI-compatible | Completado | `langchain-openai` integrado |
-| ✅ Esquema bi34.json preservado | Completado | 100% compatible |
+| ✅ Múltiples esquemas dinámicos | Completado | BI1, BI34, BI58, BI32, etc. desde DB |
 | ✅ Optimización de hardware | Completado | Script auto-detección generado |
 | ✅ Temperatura controlada | Completado | 0.1 para precisión legal |
 | ✅ Context size expandido | Completado | 8192 tokens (vs 4096) |
 | ✅ Documentación completa | Completado | 5 guías + ejemplos código |
+| ✅ Pipeline: Docling + Granite + LocalAI | Completado | Arquitectura modular |
 
 ---
 
@@ -209,13 +210,15 @@ Suite completa de tests:
 | Configuración manual | Auto-detección hardware |
 | Temperature fija | Configurable (0.1 por defecto) |
 
-### API
+### API & Esquemas
 
-| Antes  | Después |
-|--------|---------|
+| Antes (Ollama) | Después (LocalAI) |
+|---|---|
 | `ollama/api/generate` | `/v1/chat/completions` |
 | Protocolo propietario | OpenAI standard |
 | Integración `langchain-ollama` | Integración `langchain-openai` |
+| Esquema único (ej: bi34.json) | **Múltiples esquemas dinámicos** desde `act_forms_catalog` |
+| | Soporta: BI1, BI34, BI58, BI32, BI6, etc. simultáneamente |
 
 ### Rendimiento
 
@@ -231,7 +234,7 @@ Suite completa de tests:
 ## ✅ Checklist de Validación
 
 - [x] Docker-compose actualizado con LocalAI
-- [x] Configuración YAML de modelo optimizado
+- [x] Configuración YAML de modelo (Granite-Vision)
 - [x] Config.py con parámetros LocalAI
 - [x] Agent.py usando ChatOpenAI
 - [x] Requirements.txt con langchain-openai
@@ -241,7 +244,7 @@ Suite completa de tests:
 - [x] Ejemplos de código funcionales
 - [x] Configuraciones alternativas (CPU/GPU/OpenVINO)
 - [x] Backwards compatibility (Ollama/Google)
-- [x] Esquema bi34.json preservado 100%
+- [x] **Soporte multi-esquema** desde `act_forms_catalog` (BI1, BI34, BI58, etc.)
 
 ---
 
@@ -271,10 +274,12 @@ Ollama:    ⚠️ Temperature variable
 LocalAI:   ✅ 0.1 por defecto (científicamente probado)
 ```
 
-### 5. Escalabilidad
+### 5. Escalabilidad & Flexibilidad
 ```
-Ollama:    ⚠️ Single model
-LocalAI:   ✅ Multi-GPU, batch processing
+Ollama:    ⚠️ Single model, single schema
+LocalAI:   ✅ Multi-GPU, batch processing, múltiples esquemas paralelos
+           ✅ Procesa BI1, BI34, BI58, BI32 simultáneamente
+           ✅ Adapta extracción según esquema dinámico de act_forms_catalog
 ```
 
 ---

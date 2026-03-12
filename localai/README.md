@@ -157,30 +157,37 @@ langchain-ollama==0.2.3  # Mantener para fallback
 
 ## 🎯 Casos de Uso
 
-### 1. Extracción Simple (Uso Actual)
+### 1. Extracción Multi-Esquema desde act_forms_catalog
 
 ```python
 from app.engine.localai_integration import extract_structured_data
+import json
 
+# Obtener esquema dinámico desde act_forms_catalog
+cursor.execute("SELECT jsconfforma FROM act_forms_catalog WHERE form_code = %s", ("BI34",))
+form_schema = json.loads(cursor.fetchone()['jsconfforma'])
+
+# Procesar documento con esquema dinámico
 result = extract_structured_data(
     document_text=markdown_doc,
-    form_schema=bi34_schema
+    form_schema=form_schema  # Dinámico según tipo de acto (BI1, BI34, BI58, etc.)
 )
-# Resultado: {"uuid": {"value": "extracted_data"}}
+# Resultado: {"uuid": {"value": "extracted_data"}} estructura dinámica
 ```
 
-### 2. Procesamiento Batch (100 Formularios)
+### 2. Procesamiento Batch (100 Formularios - Multi-Esquema)
 
 ```python
 from app.engine.localai_integration import batch_extract_forms
 
 results = batch_extract_forms(
     documents=[
-        {"id": "form_001", "content": "Acta..."},
-        {"id": "form_002", "content": "Escritura..."}
+        {"id": "BI1_001", "content": "Documento tipo BI1..."},
+        {"id": "BI34_002", "content": "Documento tipo BI34..."},
+        {"id": "BI58_003", "content": "Documento tipo BI58..."}
     ],
-    form_schema=bi34_schema,
-    max_workers=4  # Paralelo
+    form_schema=None,  # Cada documento con su esquema de act_forms_catalog
+    max_workers=4  # Procesamiento paralelo
 )
 ```
 
