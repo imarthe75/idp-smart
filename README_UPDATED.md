@@ -330,7 +330,7 @@ El archivo `docker-compose.yml` configura explícitamente el puente de red al ho
 
 ---
 
-## � Validación de Instalación
+## 🔬 Validación de Instalación
 
 ```bash
 # Test suite completo
@@ -406,3 +406,4 @@ A diferencia de soluciones comerciales cerradas (SaaS), este stack ofrece:
 **Versión:** 2.0 (LocalAI Edition)  
 **Última actualización:** Marzo 2026  
 **Licencia:** [Especificar según proyecto]
+
