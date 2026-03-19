@@ -527,6 +527,18 @@ A diferencia de soluciones comerciales cerradas (SaaS), este stack ofrece:
 
 ---
 
+## 📈 Escalabilidad Futura: El Camino hacia vLLM
+idp-smart está diseñado bajo el principio de Abstracción de Inferencia. Aunque el stack inicial utiliza LocalAI por su versatilidad y soporte multi-backend (CPU/GPU), el sistema es 100% compatible con motores de ultra-alto rendimiento.
+
+¿Cuándo migrar a vLLM?
+Si la demanda del sistema supera los 50 expedientes simultáneos o se cuenta con clusters de GPUs NVIDIA (A100/H100), se recomienda sustituir el contenedor de LocalAI por vLLM.
+
+- **PagedAttention: vLLM permite gestionar la memoria de video de forma dinámica, aumentando el throughput hasta 10 veces en comparación con motores tradicionales.
+- **Cero Refactoring: Gracias a que ambos motores exponen una API compatible con OpenAI, el cambio consiste únicamente en actualizar la LOCALAI_BASE_URL en el archivo .env.
+- **Soporte VLM: vLLM ya integra soporte para la familia Qwen2-VL, permitiendo que la fase de visión y razonamiento ocurra en milisegundos.
+
+---
+
 **idp-smart v2.0** representa la evolución del procesamiento de documentos, transformando la revisión manual en validación estratégica asistida por IA, con control total del hardware y privacidad garantizada.
 
 **Versión:** 2.0 (LocalAI Edition)  
