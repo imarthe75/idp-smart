@@ -71,8 +71,8 @@ Documentos/min: 12-15
 
 ```bash
 # Build e iniciar
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
 
 # Verificar que LocalAI está listo
 docker logs -f idp_localai | grep -i "listening\|ready\|loaded"
@@ -236,7 +236,7 @@ docker logs idp_localai | tail -50
 sudo lsof -i :8080 | grep -v COMMAND | awk '{print $2}' | xargs kill -9
 
 # 3. Reintentar
-docker-compose restart localai
+docker compose restart localai
 ```
 
 ### Respuestas lentas (>10 segundos)
@@ -282,7 +282,7 @@ curl http://localhost:8080/v1/models -v
 
 ```bash
 # Verificar que todo está funcionando
-docker-compose ps
+docker compose ps
 curl http://localhost:8080/v1/models
 
 # Procesar documentos

@@ -1,0 +1,16 @@
+models:
+  - name: granite-vision
+    url: huggingface://IBM/granite-2b-vision-q4:ggufv3
+    prompts:
+      - language: en
+    ctx_size: 8192
+    threads: 4
+    type: image
+    
+  - name: qwen2.5:7b
+    url: huggingface://Qwen/Qwen2.5-7B-Instruct-GGUF:qwen2.5-7b-instruct-q4_k_m.gguf
+    prompts:
+      - language: en
+    ctx_size: 8192
+    threads: 4
+    type: text

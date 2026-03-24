@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   valkey:
     image: valkey/valkey:7.2
@@ -19,7 +17,7 @@ services:
       - POSTGRES_DB=rpp_qa
     volumes:
       - ./db/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     restart: always
 
   minio:
@@ -69,20 +67,16 @@ services:
       - "host.docker.internal:host-gateway"
 
   localai:
-    image: localai/localai:latest-aio-cuda-12
+    image: localai/localai:latest-cpu
     container_name: idp_localai
     ports:
       - "8080:8080"
     environment:
-      - DEBUG=1
       - THREADS=4
-      - CONTEXT_SIZE=8192
-      - MODELS_PATH=/build/models
-      - PRELOAD_MODELS=[{"url":"localai-models:granite-2b-vision-q4cm.gguf","name":"granite-vision"}]
+      - MODELS_PATH=/models
     volumes:
-      - ./localai/models:/build/models
-      - ./localai/config:/etc/localai/config
-      - localai_cache:/root/.cache
+      - ./localai/models_clean:/models
+      - localai_data:/build
     restart: always
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -102,5 +96,5 @@ services:
 volumes:
   minio_data:
   postgres_data:
-  localai_cache:
+  localai_data:
 

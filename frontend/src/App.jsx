@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useDropzone } from 'react-dropzone'
 import axios from 'axios'
 import './index.css'
@@ -114,6 +114,41 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
   const [error, setError] = useState(null)
   const [reprocessing, setReprocessing] = useState({})
   const [deleting, setDeleting] = useState({})
+  const [reusing, setReusing] = useState(null)
+  const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' })
+
+  const sortedExtractions = useMemo(() => {
+    let sortableItems = [...extractions];
+    if (sortConfig.key !== null) {
+      sortableItems.sort((a, b) => {
+        let aVal = a[sortConfig.key] || "";
+        let bVal = b[sortConfig.key] || "";
+        
+        if (sortConfig.key === 'pdf_minio_path') {
+           aVal = aVal?.split('/').pop() || '';
+           bVal = bVal?.split('/').pop() || '';
+        }
+
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [extractions, sortConfig]);
+
+  const requestSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  }
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return ' ↕';
+    return sortConfig.direction === 'asc' ? ' ↑' : ' ↓';
+  }
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -133,15 +168,16 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
     fetchHistory()
   }, [fetchHistory])
 
-  const handleReprocess = async (taskId, skipVision = false) => {
+  const handleReprocess = async (ex, skipVision = false) => {
     try {
-      setReprocessing(prev => ({ ...prev, [taskId]: true }))
-      await axios.post(`${API_BASE}/api/v1/reprocess/${taskId}?skip_vision=${skipVision}`)
+      setReprocessing(prev => ({ ...prev, [ex.task_id]: true }))
+      await axios.post(`${API_BASE}/api/v1/reprocess/${ex.task_id}?skip_vision=${skipVision}`)
+      onShowProgress(ex.task_id, ex.act_type) // NEW: Add it back to progress view automatically!
       setTimeout(fetchHistory, 1500)
     } catch (err) {
       alert(`Error al solicitar re-proceso: ${err.message}`)
     } finally {
-      setReprocessing(prev => ({ ...prev, [taskId]: false }))
+      setReprocessing(prev => ({ ...prev, [ex.task_id]: false }))
     }
   }
 
@@ -158,10 +194,61 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
     }
   }
 
+  const fileInputRef = useRef(null)
+  const [taskForAddenda, setTaskForAddenda] = useState(null)
+
+  const handleReprocessWithAddendaClick = (ex) => {
+    setTaskForAddenda(ex)
+    fileInputRef.current?.click()
+  }
+
+  const handleAddendaSelected = async (e) => {
+    const files = e.target.files
+    if (!taskForAddenda || !files || files.length === 0) return
+    
+    const fd = new FormData()
+    for (let i = 0; i < files.length; i++) {
+       fd.append('additional_documents', files[i])
+    }
+    
+    try {
+      setReprocessing(prev => ({ ...prev, [taskForAddenda.task_id]: true }))
+      await axios.post(`${API_BASE}/api/v1/reprocess/${taskForAddenda.task_id}?skip_vision=false`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      onShowProgress(taskForAddenda.task_id, taskForAddenda.act_type)
+      setTimeout(fetchHistory, 1500)
+    } catch (err) {
+      alert(`Error al reprocesar con adendas: ${err.message}`)
+    } finally {
+      setReprocessing(prev => ({ ...prev, [taskForAddenda.task_id]: false }))
+      setTaskForAddenda(null)
+      if (fileInputRef.current) fileInputRef.current.value = null
+    }
+  }
+
+  const handleReuse = (task) => {
+    onNavigateBack() // Go to home
+    document.dispatchEvent(new CustomEvent('reuse-document', { 
+      detail: { 
+        taskId: task.task_id, 
+        fileName: task.pdf_minio_path?.split('/').pop() || 'Documento previo',
+        actType: task.act_type
+      } 
+    }))
+  }
+
   if (loading) return <div className="loading-state">⏳ Cargando historial de extracciones...</div>
 
   return (
     <div className="history-container">
+      <input 
+        type="file" 
+        multiple 
+        ref={fileInputRef} 
+        style={{display: 'none'}} 
+        onChange={handleAddendaSelected}
+      />
       <div className="history-header">
         <button onClick={onNavigateBack} className="btn-back">← Volver al inicio</button>
         <h2 className="history-title">Historial de Procesos</h2>
@@ -178,16 +265,29 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
         <table className="history-table">
           <thead>
             <tr>
-              <th>ID de Tarea</th>
-              <th>Acto</th>
-              <th>Documento</th>
-              <th>Estado / Etapa</th>
-              <th>Fecha</th>
+              <th onClick={() => requestSort('task_id')} style={{cursor:'pointer', userSelect:'none'}}>
+                ID de Tarea{getSortIcon('task_id')}
+              </th>
+              <th onClick={() => requestSort('act_type')} style={{cursor:'pointer', userSelect:'none'}}>
+                Acto{getSortIcon('act_type')}
+              </th>
+              <th onClick={() => requestSort('pdf_minio_path')} style={{cursor:'pointer', userSelect:'none'}}>
+                Documento{getSortIcon('pdf_minio_path')}
+              </th>
+              <th onClick={() => requestSort('status')} style={{cursor:'pointer', userSelect:'none'}}>
+                Estado / Etapa{getSortIcon('status')}
+              </th>
+              <th onClick={() => requestSort('created_at')} style={{cursor:'pointer', userSelect:'none'}}>
+                Fecha{getSortIcon('created_at')}
+              </th>
+              <th>Visión</th>
+              <th>IA / JSON</th>
+              <th>Total</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {extractions.map(ex => (
+            {sortedExtractions.map(ex => (
               <tr key={ex.task_id}>
                 <td><code className="task-id-small">{ex.task_id?.substring(0,8)}...</code></td>
                 <td><span className="badge-gray">{ex.act_type || '—'}</span></td>
@@ -200,6 +300,9 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
                   </span>
                 </td>
                 <td>{ex.created_at ? ex.created_at.split('.')[0] : '—'}</td>
+                <td><span className="time-metric">{ex.docling_duration_s ? `${ex.docling_duration_s}s` : '—'}</span></td>
+                <td><span className="time-metric">{ex.ai_duration_s ? `${ex.ai_duration_s}s` : '—'}</span></td>
+                <td><span className="time-metric bold">{ex.total_duration_s ? fmtTime(Math.round(ex.total_duration_s)) : '—'}</span></td>
                 <td className="actions-cell">
                    <div className="action-buttons">
                       <button 
@@ -209,8 +312,28 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
                       >
                         📊
                       </button>
+                      <a 
+                        href={`${API_BASE}/api/v1/document/pdf/${ex.task_id}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="btn-action-small view"
+                        title="Ver PDF Original"
+                      >
+                        📄
+                      </a>
+                      {(ex.status === 'COMPLETED' || ex.status === 'COMPLETADO' || ex.markdown_minio_path) && (
+                        <a 
+                          href={`${API_BASE}/api/v1/document/markdown/${ex.task_id}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="btn-action-small view md"
+                          title="Ver Markdown Extraído"
+                        >
+                          📝
+                        </a>
+                      )}
                       <button 
-                        onClick={() => handleReprocess(ex.task_id, true)}
+                        onClick={() => handleReprocess(ex, true)}
                         disabled={reprocessing[ex.task_id]}
                         className="btn-action-small"
                         title="Re-procesar solo IA"
@@ -218,12 +341,20 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
                         IA
                       </button>
                       <button 
-                        onClick={() => handleReprocess(ex.task_id, false)}
+                        onClick={() => handleReprocess(ex, false)}
                         disabled={reprocessing[ex.task_id]}
                         className="btn-action-small"
                         title="Re-procesar todo"
                       >
                         🔄
+                      </button>
+                      <button 
+                        onClick={() => handleReprocessWithAddendaClick(ex)}
+                        disabled={reprocessing[ex.task_id]}
+                        className="btn-action-small"
+                        title="Re-procesar todo añadiendo adendas"
+                      >
+                        +📎
                       </button>
                       <button 
                         onClick={() => handleDelete(ex.task_id)}
@@ -232,6 +363,13 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
                         title="Eliminar registro"
                       >
                         🗑️
+                      </button>
+                      <button 
+                        onClick={() => handleReuse(ex)}
+                        className="btn-action-small reuse"
+                        title="Reutilizar documento en nueva forma"
+                      >
+                        ♻️
                       </button>
                       {(ex.status === 'COMPLETED' || ex.status === 'COMPLETADO') && (
                         <>
@@ -263,6 +401,16 @@ export default function App() {
   const [actError, setActError]     = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [tasks, setTasks]           = useState([])
+  const [reusingDoc, setReusingDoc] = useState(null) // { taskId, fileName }
+
+  useEffect(() => {
+    const handler = (e) => {
+      setReusingDoc(e.detail)
+      setFiles([]) // Clear files if we are reusing
+    }
+    document.addEventListener('reuse-document', handler)
+    return () => document.removeEventListener('reuse-document', handler)
+  }, [])
 
   const showProgress = (taskId, actLabel) => {
     // Si la tarea ya está en la lista de monitoreo, no la duplicamos
@@ -284,6 +432,7 @@ export default function App() {
 
   // Dropzone
   const onDrop = useCallback((accepted) => {
+    setReusingDoc(null) // Clear reuse if new files are dropped
     setFiles(prev => {
       const names = new Set(prev.map(f => f.name))
       return [...prev, ...accepted.filter(f => !names.has(f.name))]
@@ -302,9 +451,11 @@ export default function App() {
   })
 
   const removeFile = (name) => setFiles(prev => prev.filter(f => f.name !== name))
+  
+  const [groupAsAddenda, setGroupAsAddenda] = useState(false)
 
   const handleSubmit = async () => {
-    if (!selectedAct || files.length === 0) return
+    if (!selectedAct || (files.length === 0 && !reusingDoc)) return
     setSubmitting(true)
 
     // Obtener la configuración real de la forma desde el catálogo (antes era un mock vacío)
@@ -320,28 +471,72 @@ export default function App() {
     const jsonBlob = new Blob([JSON.stringify(jsonToUpload)], { type: 'application/json' })
 
     const results = []
-    for (const file of files) {
+    if (reusingDoc) {
       const fd = new FormData()
       fd.append('act_type',  selectedAct.dsactocorta)
       fd.append('form_code', String(selectedAct.form_code))
       fd.append('json_form', jsonBlob, 'form.json')
-      fd.append('document',  file)
+      fd.append('reuse_task_id', reusingDoc.taskId)
+      try {
+        const { data } = await axios.post(`${API_BASE}/api/v1/process`, fd)
+        results.push({
+          taskId:   data.task_id,
+          fileName: reusingDoc.fileName,
+          actLabel: selectedAct.display_label,
+        })
+      } catch (err) {
+        alert(`Error al reutilizar: ${err.message}`)
+      }
+    } else if (groupAsAddenda && files.length > 1) {
+      const fd = new FormData()
+      fd.append('act_type',  selectedAct.dsactocorta)
+      fd.append('form_code', String(selectedAct.form_code))
+      fd.append('json_form', jsonBlob, 'form.json')
+      fd.append('document',  files[0]) // primer archivo es el principal
+      for (let i = 1; i < files.length; i++) {
+        fd.append('additional_documents', files[i])
+      }
       try {
         const { data } = await axios.post(`${API_BASE}/api/v1/process`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
         results.push({
           taskId:   data.task_id,
-          fileName: file.name,
+          fileName: `${files[0].name} +${files.length-1} adendas`,
           actLabel: selectedAct.display_label,
         })
       } catch (err) {
-        console.error(`Error enviando ${file.name}:`, err)
+        alert(`Error al procesar lote: ${err.message}`)
+      }
+    } else {
+      for (const file of files) {
+        const fd = new FormData()
+        fd.append('act_type',  selectedAct.dsactocorta)
+        fd.append('form_code', String(selectedAct.form_code))
+        fd.append('json_form', jsonBlob, 'form.json')
+        fd.append('document',  file)
+        try {
+          const { data } = await axios.post(`${API_BASE}/api/v1/process`, fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+          results.push({
+            taskId:   data.task_id,
+            fileName: file.name,
+            actLabel: selectedAct.display_label,
+          })
+        } catch (err) {
+          console.error(`Error enviando ${file.name}:`, err)
+          const msg = err.response?.data?.detail 
+            ? JSON.stringify(err.response.data.detail) 
+            : (err.response?.data?.error || err.message)
+          alert(`Error al procesar "${file.name}":\n${msg}`)
+        }
       }
     }
 
     setTasks(prev => [...results, ...prev])
     setFiles([])
+    setReusingDoc(null)
     setSubmitting(false)
   }
 
@@ -428,17 +623,32 @@ export default function App() {
 
               {/* Paso 2 */}
               <div className="step">
-                <div className="step-label">PASO 2 — DOCUMENTOS Y ADENDAS</div>
-                <div {...getRootProps()} className={`dropzone ${isDragActive ? 'dz-active' : ''}`}>
-                  <input {...getInputProps()} />
-                  <svg className="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <polyline points="16 16 12 12 8 16"/>
-                    <line x1="12" y1="12" x2="12" y2="21"/>
-                    <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
-                  </svg>
-                  <p className="dz-main"><span className="dz-link">Haz clic</span> o arrastra los archivos aquí</p>
-                  <p className="dz-types">PDF · PNG · JPG · DOCX</p>
-                </div>
+                <div className="step-label">PASO 2 — DOCUMENTOS O REÚSO</div>
+                
+                {reusingDoc ? (
+                  <div className="reuse-notice">
+                    <div className="reuse-info">
+                      <span className="reuse-icon">♻️</span>
+                      <div>
+                        <p className="reuse-title">Reutilizando documento</p>
+                        <p className="reuse-file">{reusingDoc.fileName}</p>
+                        <code className="reuse-id">ID: {reusingDoc.taskId}</code>
+                      </div>
+                    </div>
+                    <button onClick={() => setReusingDoc(null)} className="btn-cancel-reuse">Cambiar por archivos nuevos</button>
+                  </div>
+                ) : (
+                  <div {...getRootProps()} className={`dropzone ${isDragActive ? 'dz-active' : ''}`}>
+                    <input {...getInputProps()} />
+                    <svg className="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <polyline points="16 16 12 12 8 16"/>
+                      <line x1="12" y1="12" x2="12" y2="21"/>
+                      <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+                    </svg>
+                    <p className="dz-main"><span className="dz-link">Haz clic</span> o arrastra los archivos aquí</p>
+                    <p className="dz-types">PDF · PNG · JPG · DOCX</p>
+                  </div>
+                )}
 
                 {files.length > 0 && (
                   <div className="file-list">
@@ -453,6 +663,19 @@ export default function App() {
                         <button onClick={() => removeFile(f.name)} className="file-remove">✕</button>
                       </div>
                     ))}
+                    {files.length > 1 && (
+                      <div style={{marginTop: '10px', fontSize: '0.9rem', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                        <input 
+                          type="checkbox" 
+                          id="groupAsAddenda" 
+                          checked={groupAsAddenda} 
+                          onChange={e => setGroupAsAddenda(e.target.checked)} 
+                        />
+                        <label htmlFor="groupAsAddenda" style={{cursor: 'pointer'}}>
+                          Agrupar en una sola extracción (El 1° será principal, los demás Adendas)
+                        </label>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -461,10 +684,12 @@ export default function App() {
               <div className="submit-row">
                 <button
                   onClick={handleSubmit}
-                  disabled={!selectedAct || files.length === 0 || submitting}
+                  disabled={!selectedAct || (files.length === 0 && !reusingDoc) || submitting}
                   className="btn-submit"
                 >
-                  {submitting ? '⟳ Enviando…' : `Iniciar Extracción${files.length > 1 ? ` (${files.length})` : ''}`}
+                  {submitting ? '⟳ Enviando…' : 
+                   reusingDoc ? 'Iniciar con Documento Reutilizado' :
+                   `Iniciar Extracción${files.length > 1 ? ` (${files.length})` : ''}`}
                 </button>
               </div>
             </div>

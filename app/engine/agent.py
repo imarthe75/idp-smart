@@ -6,6 +6,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain.prompts import PromptTemplate
+from engine.ensemble import get_ensemble_llm  # NUEVO: Soporte ensemble
 
 def create_simplified_json(extracted_data: dict, schema: dict) -> dict:
     """
@@ -71,18 +72,27 @@ def create_simplified_json(extracted_data: dict, schema: dict) -> dict:
 def get_llm():
     """
     Instancia el LLM configurado en Settings.
-    Soporta Google (Gemini), Ollama (Legacy), y LocalAI (OpenAI Compatible).
+    Soporta Google (Gemini), Ollama (Legacy), LocalAI, y Ensemble (Granite+Qwen).
     """
     try:
+        # ¿Usar ensemble?
+        if settings.use_ensemble:
+            print(f"🔀 ENSEMBLE activado: {settings.ensemble_provider} ({settings.ensemble_strategy})")
+            return get_ensemble_llm(use_ensemble=True)
+        
+        # Sino, usar LLM simple
         if settings.llm_provider == "localai":
-            print(f"🚀 Conectando a LocalAI en {settings.localai_base_url} con modelo {settings.localai_model}...")
+            print(f"🚀 Conectando a LocalAI en {settings.localai_url} con modelo {settings.model_reasoning}...")
+            # Habilitamos response_format: json_object para forzar al backend (llama-cpp)
+            # a usar una gramática JSON que evite textos planos o markdown roto.
             return ChatOpenAI(
-                base_url=settings.localai_base_url,
-                api_key="not-needed",  # LocalAI no requiere API key por defecto
-                model=settings.localai_model,
+                base_url=settings.localai_url,
+                api_key="not-needed",
+                model=settings.model_reasoning,
                 temperature=settings.localai_temperature,
                 max_tokens=settings.localai_max_tokens,
                 timeout=settings.localai_timeout,
+                model_kwargs={"response_format": {"type": "json_object"}},
                 verbose=True
             )
         elif settings.llm_provider == "ollama":
@@ -105,6 +115,93 @@ def get_llm():
     except Exception as e:
         print(f"❌ Error cargando el LLM ({settings.llm_provider}): {e}")
         return None
+
+def minify_schema(schema):
+    """
+    Minimiza el esquema JSON para el LLM. Elimina toda la configuración de interfaz de usuario
+    y mantiene estrictamente los UUIDs, etiquetas y jerarquía que el LLM necesita para iterar.
+    """
+    import copy
+    
+    if isinstance(schema, dict):
+        # Si es el root object (usualmente tiene 'containers')
+        if "containers" in schema:
+            return {"containers": [minify_schema(c) for c in schema.get("containers", [])]}
+        
+        # Si es un contenedor
+        minified = {}
+        if "uuid" in schema: minified["uuid"] = schema["uuid"]
+        if "label" in schema: minified["label"] = schema["label"]
+        if "repetitiva" in schema: minified["repetitiva"] = schema["repetitiva"]
+        
+        if "controls" in schema:
+            minified["controls"] = []
+            for ctrl in schema["controls"]:
+                m_ctrl = {}
+                if "uuid" in ctrl: m_ctrl["uuid"] = ctrl["uuid"]
+                if "label" in ctrl: m_ctrl["label"] = ctrl["label"]
+                if "type" in ctrl: m_ctrl["type"] = ctrl["type"]
+                if "maxLength" in ctrl: m_ctrl["maxLength"] = ctrl["maxLength"]
+                minified["controls"].append(m_ctrl)
+            return minified
+            
+        # Fallback para estructuras no reconocidas o anidadas
+        for k, v in schema.items():
+            if k not in ["style", "width", "visible", "disabled", "className", "icon", "description", "colSpan"]:
+                minified[k] = minify_schema(v)
+        return minified
+        
+    elif isinstance(schema, list):
+        return [minify_schema(item) for item in schema]
+        
+    return schema
+
+def convert_to_json_schema(schema_minified: dict) -> dict:
+    """
+    Convierte el esquema minimizado de rpp_qa a un esquema JSON estándar 
+    para forzar la gramática GBNF en LocalAI.
+    """
+    properties = {}
+    required = []
+
+    # Procesar contenedores del root
+    if "containers" in schema_minified:
+        for container in schema_minified["containers"]:
+            uuid = container.get("uuid")
+            if not uuid: continue
+            
+            is_repetitive = container.get("repetitiva", False)
+            
+            # Sub-propiedades (controles o sub-contenedores)
+            sub_props = {}
+            if "controls" in container:
+                for ctrl in container["controls"]:
+                    ctrl_uuid = ctrl.get("uuid")
+                    if ctrl_uuid:
+                        sub_props[ctrl_uuid] = {"type": ["string", "number", "null"]}
+            
+            if is_repetitive:
+                properties[uuid] = {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": sub_props
+                    }
+                }
+            else:
+                properties[uuid] = {
+                    "type": "object",
+                    "properties": sub_props
+                }
+            
+            required.append(uuid)
+    
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": False
+    }
 
 def extract_form_data(markdown_text: str, json_form_schema: dict) -> dict:
     """
@@ -173,14 +270,7 @@ ESQUEMA (estructura y UUIDs):
 DOCUMENTO:
 {document_md}
 
-⚠️ RESTRICCIONES FINALES:
-- Retorna SOLO JSON válido
-- Sin explicaciones, sin markdown, sin backticks
-- Respeta EXACTAMENTE la estructura uuid → value del esquema
-- Si un uuid no existe en el documento → omítelo O usa null
-- Arrays SIEMPRE para campos repetibles (incluso si hay solo 1 instancia)
-
-Respuesta (Solo JSON):
+Respuesta (JSON):
 """
     
     llm = get_llm()
@@ -191,17 +281,71 @@ Respuesta (Solo JSON):
     prompt = PromptTemplate.from_template(template)
     chain = prompt | llm
     
-    safe_markdown = markdown_text[:1000000] 
+    # Para un context_window de 8k-16k, limitamos el markdown para asegurar que quepa el esquema y las instrucciones.
+    # 30k caracteres es aprox 7k-10k tokens, dejando espacio suficiente.
+    safe_markdown = (markdown_text or "")[:30000] 
+    
+    import time
+    import psutil
+    
+    # Debug info: Minify schema before dumping to save context length matching the model's 8k token limit
+    minified_schema = minify_schema(json_form_schema)
+    schema_str = json.dumps(minified_schema, indent=2)
+    
+    # Generar JSON Schema para forzar gramática GBNF
+    try:
+        strict_json_schema = convert_to_json_schema(minified_schema)
+        # Inyectar el esquema estricto en el LLM call si es LocalAI
+        if hasattr(llm, "model_kwargs"):
+            llm.model_kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "rpp_qa_extraction",
+                    "strict": True,
+                    "schema": strict_json_schema
+                }
+            }
+            print(f"💎 [SCHEMA] Gramática GBNF estricta inyectada para {len(strict_json_schema['properties'])} contenedores")
+    except Exception as e_schema:
+        print(f"⚠️ No se pudo generar esquema GBNF estricto: {e_schema}. Usando modo JSON genérico.")
+        if hasattr(llm, "model_kwargs"):
+            llm.model_kwargs["response_format"] = {"type": "json_object"}
+
+    print(f"📏 [DEBUG] Tamaño Markdown: {len(safe_markdown)} chars | Tamaño Esquema Original: {len(json.dumps(json_form_schema))} chars | Esquema Minimizado: {len(schema_str)} chars")
+    
+    start_time = time.time()
+    model_info = "Gemini" if settings.llm_provider == "google" else settings.model_reasoning
+    print(f"🧠 [Razonamiento] Enviando prompt ({settings.llm_provider}) usando {model_info}...")
+    mem_before = psutil.Process().memory_info().rss / 1024 / 1024
     
     response = chain.invoke({
         "document_md": safe_markdown,
-        "form_schema": json.dumps(json_form_schema, indent=2)
+        "form_schema": schema_str
     })
     
+    elapsed = time.time() - start_time
+    mem_after = psutil.Process().memory_info().rss / 1024 / 1024
+    print(f"✅ [Razonamiento] Completado en {elapsed:.2f}s | Memoria CPU: {mem_before:.1f}MB -> {mem_after:.1f}MB")
+    
     text_response = response.content.strip()
-    clean_text = text_response.replace('```json', '').replace('```', '').strip()
+    print(f"📝 [DEBUG] Respuesta RAW (primeros 100 chars): {text_response[:100]}...")
+    
+    # Limpieza robusta: eliminar posibles bloques markdown si el modelo los incluyó
+    # (aunque con json_object no debería, es mejor prevenir para compatibilidad)
+    clean_text = text_response
+    if "```json" in clean_text:
+        clean_text = clean_text.split("```json")[-1].split("```")[0]
+    elif "```" in clean_text:
+        clean_text = clean_text.split("```")[-1].split("```")[0]
+    
+    clean_text = clean_text.strip()
     
     try:
+        # Si la respuesta es vacía, levantar error para intentar reparar
+        if not clean_text or clean_text == "":
+            raise ValueError("Respuesta del LLM vacía")
+            
+        # Intentar parseo directo
         extracted_json = json.loads(clean_text)
         return extracted_json
     except Exception as e1:

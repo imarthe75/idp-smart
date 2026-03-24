@@ -1,0 +1,75 @@
+# docker-compose.ensemble.yml
+# Versión de docker-compose.yml.override para incluir Qwen en LocalAI
+# 
+# Usar: docker compose -f docker-compose.yml -f docker-compose.ensemble.yml up -d
+# O copiar secciones a docker-compose.override.yml
+
+version: '3.8'
+
+services:
+  localai:
+    # Imagen con CUDA (GPU support)
+    image: localai/localai:latest-aio-cuda-12
+    container_name: idp_localai
+    ports:
+      - "8080:8080"
+    environment:
+      - DEBUG=1
+      - THREADS=4
+      - CONTEXT_SIZE=8192
+      - MODELS_PATH=/build/models
+      # PRE-CARGAR AMBOS MODELOS:
+      # Granite Vision para OCR + Visión
+      # Qwen 7B para razonamiento + refinamiento
+      - PRELOAD_MODELS=[
+          {
+            "url":"localai-models:granite-2b-vision-q4cm.gguf",
+            "name":"granite-vision"
+          },
+          {
+            "url":"huggingface:TheBloke/Qwen2.5-7B-Instruct-GGUF/qwen2.5-7b-instruct-q4_k_m.gguf",
+            "name":"qwen-7b-instruct"
+          }
+        ]
+    volumes:
+      - ./localai/models:/build/models
+      - ./localai/config:/etc/localai/config
+      - localai_cache:/root/.cache
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Limites de recursos (ajustar según tu GPU)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  localai_cache:
+
+# === NOTAS ===
+# 1. Si TIENES GPU NVIDIA:
+#    - Los modelos se cargarán en paralelo
+#    - Granite en una sesión, Qwen en otra
+#    - Cada modelo usa ~2GB VRAM
+#    - Total: ~4-5GB VRAM necesarios
+#
+# 2. Si TIENES CPU:
+#    - Los modelos se cargarán secuencialmente
+#    - Primera llamada: más lenta (carga modelo)
+#    - Después: cachea
+#
+# 3. TIMES ESPERADOS:
+#    - Startup inicial: 2-5 min (descarga modelos)
+#    - Por documento:
+#      - Granite solo: 3-5 min (CPU), 0.8 min (GPU)
+#      - Ensemble SecuenCial: 4.5-6 min (CPU), 1.3 min (GPU)
+#      - Ensemble Paralelo: 3.5-5 min (CPU), 0.8 min (GPU - no overhead)
+#
+# 4. STORAGE:
+#    - Granite: 730MB (cuantizado q4)
+#    - Qwen 7B: 4.2GB (q4_k_m)
+#    - Total: ~5GB en ./localai/models/

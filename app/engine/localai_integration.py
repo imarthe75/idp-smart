@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 LOCALAI_BASE_URL = os.getenv("LOCALAI_BASE_URL", "http://localhost:8080/v1")
-LOCALAI_MODEL = os.getenv("LOCALAI_MODEL", "granite-vision")
+LOCALAI_MODEL = os.getenv("LOCALAI_MODEL", "qwen2-7b-instruct-q4_k_m.gguf")
 LOCALAI_TEMPERATURE = float(os.getenv("LOCALAI_TEMPERATURE", "0.1"))
 LOCALAI_MAX_TOKENS = int(os.getenv("LOCALAI_MAX_TOKENS", "2048"))
 LOCALAI_TIMEOUT = int(os.getenv("LOCALAI_TIMEOUT", "300"))

@@ -70,3 +70,16 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+
+# Models and LocalAI data
+localai/models_clean/
+localai/models/
+localai/config/idp-smart-*.yaml
+
+# Benchmark results
+**/benchmark_results/
+
+# System and hidden files
+._*
+.DS_Store
+Thumbs.db

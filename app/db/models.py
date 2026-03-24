@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float, func
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, func, UUID
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base
 
@@ -16,12 +16,14 @@ class DocumentExtraction(Base):
     __table_args__ = {"schema": "idp_smart"}
 
     id                  = Column(Integer, primary_key=True, index=True)
-    task_id             = Column(String(255), unique=True, index=True, nullable=False)
+    task_id             = Column(UUID(as_uuid=True), unique=True, index=True, nullable=False)
     act_type            = Column(String(255), nullable=True)   # dsactocorta, ej: BI34
     form_code           = Column(String(255), nullable=True)   # lldeffrmpre de cfdeffrmpre
     pdf_minio_path      = Column(String(1024), nullable=True)  # ruta del documento en MinIO
     json_minio_path     = Column(String(1024), nullable=True)  # ruta del esquema JSON en MinIO
     markdown_minio_path = Column(String(1024), nullable=True)  # ruta del markdown generado por Docling
+    additional_docs      = Column(JSONB, nullable=True)  # Lista de rutas MinIO para documentos adicionales
+    parent_task_id      = Column(UUID(as_uuid=True), nullable=True)    # Referencia si se rehusó el markdown de otra tarea
     stage_current       = Column(String(100), nullable=True)   # etapa activa en el worker
     status              = Column(String(50), default="PENDING_CELERY")
     extracted_data      = Column(JSONB, nullable=True)  # JSON completo con todos los UUID y campos del sistema Java
@@ -41,10 +43,27 @@ class ProcessLog(Base):
     __table_args__ = {"schema": "idp_smart"}
 
     id           = Column(Integer, primary_key=True, index=True)
-    task_id      = Column(String(255), index=True, nullable=False)  # Referencia a document_extractions
+    task_id      = Column(UUID(as_uuid=True), index=True, nullable=False)  # Referencia a document_extractions
     stage        = Column(String(100), nullable=False)              # Etapa: VISION | SCHEMA_LOAD | AGENT | MAPPER | DB_SAVE | ERROR
     level        = Column(String(20), default="INFO")               # INFO | WARNING | ERROR | DEBUG
     message      = Column(Text, nullable=False)                     # Mensaje descriptivo del evento
     detail       = Column(JSONB, nullable=True)                      # Datos adicionales (métricas, errores, payloads cortos)
     duration_ms  = Column(Float, nullable=True)                     # Duración de la etapa en milisegundos
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ActFormsCatalog(Base):
+    """
+    Catálogo de actos y formas pre-codificadas.
+    """
+    __tablename__ = "act_forms_catalog"
+    __table_args__ = {"schema": "idp_smart"}
+
+    id           = Column(Integer, primary_key=True, index=True)
+    form_code    = Column(String(50))
+    lldeffrmpre  = Column(Integer)
+    llacto       = Column(Integer)
+    dsactocorta  = Column(String(100))
+    dsacto       = Column(String(255))
+    jsconfforma  = Column(JSONB)
     created_at   = Column(DateTime(timezone=True), server_default=func.now())
