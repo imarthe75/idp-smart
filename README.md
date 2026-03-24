@@ -17,7 +17,8 @@
 5. [Métricas de Rendimiento y Realidad Técnica](#-métricas-de-rendimiento-y-realidad-técnica)
 6. [Estructura y Componentes](#-estructura-y-componentes)
 7. [Instalación y Uso](#-instalación-y-uso)
-8. [Sugerencias para el Futuro (Roadmap Pro)](#-sugerencias-para-el-futuro-roadmap-pro)
+8. [Estado del Proyecto y Roadmap](#-estado-del-proyecto-y-roadmap)
+9. [Escalabilidad Futura](#-escalabilidad-futura)
 
 ---
 
@@ -62,17 +63,27 @@ A diferencia de soluciones tradicionales de OCR, idp-smart es arquitectónicamen
 ### 1. **Razonamiento en Tiempo Real (Zero-Shot)**
 No entrenamos un modelo para cada formulario. Usamos modelos pre-entrenados que "entienden" leyes. Simplemente le pasamos el JSON vacío y la IA usa lógica para extraer el dato. **Funciona con 1, 100 o 1000 formas diferentes al instante sin re-entrenar.**
 
-### 2. **Long-Context Window**
-Soportamos contextos de hasta 128,000 tokens. Una escritura de 50 páginas cabe **completa** en la memoria de la IA, lo que evita que se pierda la relación entre el comprador de la página 1 y el vendedor de la página 40.
+### 2. **Long-Context Window (No Chunking)**
+Soportamos contextos de hasta 128,000 tokens. Los métodos antiguos dividían el documento en pedazos (chunks) perdiendo el contexto legal. Nosotros leemos el documento **íntegro**, preservando la jerarquía legal completa entre páginas.
 
-### 3. **Visión semántica (Docling + VLM)**
-No usamos Tesseract (tecnología del año 2000). Usamos **VLM (Vision Language Models)** que entienden dónde están los sellos, las firmas y las tablas como si fueran un abogado humano revisando el expediente.
+### 3. **Visión semántica (VLM vs OCR Tradicional)**
+*   **Tesseract (2000):** Falla en sellos superpuestos y requiere limpieza manual.
+*   **PaddleOCR:** Bueno para IDs, pero no entiende relaciones legales.
+*   **Docling + Granite-Vision:** Entiende tablas, firmas y contexto semántico. Es como un abogado humano revisando el expediente.
+
+### 📊 Comparativa Técnica
+| Característica | Método RAG + Chunks | Método idp-smart |
+|---|---|---|
+| **Preparación** | Meses etiquetando datos | Cero días. Modelo pre-entrenado |
+| **Escalabilidad** | Re-entrenar por cada forma | Sumar JSON a catálogo |
+| **Contexto** | Se fragmenta | Íntegro (Zero fragmentación) |
+| **Adendas** | Complejo (re-indexar) | Nativo (suma al contexto) |
 
 ---
 
 ## 📈 Métricas de Rendimiento y Realidad Técnica
 
-Actualmente el sistema soporta dos modos de operación. Los tiempos varían drásticamente según el **Proveedor de IA** elegido:
+Ajuste de tiempos según el **Proveedor de IA**:
 
 | Escenario | Google Gemini (Cloud ⚡) | LocalAI (CPU Local 🐢) | LocalAI (GPU Local 🚀) |
 |-----------|-------------------------|--------------------------|-------------------------|
@@ -81,7 +92,7 @@ Actualmente el sistema soporta dos modos de operación. Los tiempos varían drá
 | **Doc Repetido (Cache)** | 0.1 segundos | 0.1 segundos | 0.1 segundos |
 
 > [!IMPORTANT]
-> **idp-smart** v3.1 está actualmente configurado con `LLM_PROVIDER=google`. Si eliges usar `localai` en CPU, los tiempos serán significativamente mayores (8-10 veces más lentos).
+> **idp-smart** v3.2 está configurado con `LLM_PROVIDER=google`. El modo local en CPU es 8-10 veces más lento.
 
 ---
 
@@ -102,24 +113,37 @@ Actualmente el sistema soporta dos modos de operación. Los tiempos varían drá
 
 ### Arranque Rápido
 ```bash
-# 1. Iniciar servicios
 docker compose down && docker compose up -d
-
-# 2. Verificar API
-curl http://localhost:8000/api/v1/forms
-
-# 3. Acceder a UI
-http://localhost:5173
 ```
 
 ---
 
-## 💡 Sugerencias Estratégicas (Roadmap Pro)
+## 🚦 Estado del Proyecto
 
-1.  **✅ MinIO Reactive Trigger (Implementado)**: El sistema ya no "espera" llamadas; reacciona automáticamente al recibir archivos en S3 mediante Webhooks internos, permitiendo ingestas masivas desde cualquier origen.
-2.  **⏳ RAG Legal (Futuro)**: Integración con **ChromaDB/Qdrant** para consulta de leyes y manuales registrales en tiempo real, aumentando la precisión jurídica de la IA.
-3.  **⏳ Observabilidad Pro (Futuro)**: Dashboards de **Grafana + Prometheus** para monitorear el rendimiento del hardware y éxito de extracciones en producción.
+| Componente | Status | Detalles |
+|-----------|--------|----------|
+| **Docling Integration** | ✅ Estable | OCR y layout semántico |
+| **Reactive Ingestion** | ✅ Estable | Webhook MinIO -> API -> Celery |
+| **Native UUID v7** | ✅ Estable | PostgreSQL 18.x |
+| **Visual Audit** | ✅ Estable | Visión PDF/Markdown en UI |
+| **Forms Catalog** | ✅ Estable | 100+ esquemas dinámicos |
 
 ---
 
-**idp-smart v3.1** - *Soberanía Digital y Precisión Notarial asistida por IA.*
+## 📈 Escalabilidad Futura (Roadmap)
+
+1.  **✅ MinIO Reactive Trigger**: Implementado en v3.2.
+2.  **⏳ RAG Legal**: Integración con **ChromaDB/Qdrant** para consulta de leyes.
+3.  **⏳ vLLM Migration**: Sustituir LocalAI por vLLM para throughput masivo (PagedAttention) cuando se superen los 50 expedientes simultáneos.
+4.  **⏳ Observabilidad**: Dashboards de **Grafana + Prometheus**.
+
+---
+
+## 📖 Referencias Técnicas
+- **[docs/DOCLING_QUICK_START.md](docs/DOCLING_QUICK_START.md)** - Guía de visión.
+- **[docs/CHANGELOG.md](docs/CHANGELOG.md)** - Historial de versiones.
+- **[MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)** - Guía para despliegue On-Premise.
+
+---
+
+**idp-smart v3.2** - *Soberanía Digital y Precisión Notarial asistida por IA.*
