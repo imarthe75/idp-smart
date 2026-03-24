@@ -54,6 +54,31 @@ graph TD
     I -->|Notificar| J[Frontend Dashboard]
 ```
 
+### 🌐 Infraestructura de Contenedores (Ecosistema)
+```mermaid
+graph LR
+    subgraph "Capas de Aplicación"
+    API[FastAPI:8000]
+    Worker[Celery Worker]
+    UI[Frontend:5173]
+    end
+
+    subgraph "Servicios Cores"
+    DB[(PostgreSQL 18)]
+    S3[MinIO S3]
+    Redis[Valkey/Redis]
+    AI[LocalAI:8080]
+    end
+
+    UI --> API
+    API --> DB
+    API --> S3
+    Worker --> Redis
+    Worker --> S3
+    Worker --> AI
+    Worker --> DB
+```
+
 ---
 
 ## 🧠 ¿Por Qué idp-smart es "Smart"? (Y No Requiere Entrenamiento)
