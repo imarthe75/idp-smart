@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Depends, File, UploadFile, BackgroundTasks, Form
+from fastapi import FastAPI, Depends, File, UploadFile, BackgroundTasks, Form, Request
+import logging
+import json
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -17,6 +19,10 @@ app = FastAPI(
     description="Intelligent Document Processing - Extracción semántica y llenado automatizado de formas registrales y notariales.",
     version="1.0.0"
 )
+
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("idp-smart")
 
 # CORS: acepta cualquier origen en redes privadas RFC-1918 y localhost.
 # Funciona sin importar la IP del servidor de desarrollo o producción.
@@ -161,12 +167,17 @@ async def process_document(
     })
     await db.commit()
     
-    # 5. Enviar a Celery
-    celery_app.send_task(
-        "process_doc", 
-        args=[str(task_id), json_object_name, pdf_object_name, skip_vision], 
-        task_id=str(task_id)
-    )
+    # 5. Enviar a Celery (DESACTIVADO: Ahora lo hace MinIO reactivamente vía Webhook)
+    # A menos que sea un reúso (que no dispara evento de upload en MinIO)
+    if reuse_task_id:
+        celery_app.send_task(
+            "process_doc", 
+            args=[str(task_id), json_object_name, pdf_object_name, skip_vision], 
+            task_id=str(task_id)
+        )
+        logger.info(f"Manual dispatch for reuse: {task_id}")
+    else:
+        logger.info(f"Waiting for MinIO reactive trigger for task: {task_id}")
     
     return {
         "status": "Accepted",
@@ -626,3 +637,62 @@ async def view_markdown(task_id: str, db: AsyncSession = Depends(get_db)):
         return StreamingResponse(response, media_type="text/markdown; charset=utf-8")
     except Exception as e:
         return {"error": str(e), "code": 500}
+
+@app.post("/api/v1/internal/minio-event", tags=["Internal"])
+async def minio_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Recibe notificaciones de MinIO cuando un archivo se sube al bucket.
+    Si el archivo es un PDF/Imagen en el bucket correcto, dispara el procesamiento.
+    """
+    try:
+        data = await request.json()
+        records = data.get("Records", [])
+        for record in records:
+            s3 = record.get("s3")
+            if not s3: continue
+            
+            bucket = s3["bucket"]["name"]
+            key = s3["object"]["key"]
+            
+            # El key viene URL-encoded desde MinIO
+            from urllib.parse import unquote
+            clean_key = unquote(key)
+            
+            logger.info(f"🔔 MinIO Event: {record.get('eventName')} en {bucket}/{clean_key}")
+            
+            # Buscar si ya existe la tarea en la DB (creada por la API antes del upload)
+            # Buscamos por el final del path para evitar problemas con prefijos de bucket
+            query = text("""
+                SELECT task_id, act_type, form_code, json_form, status
+                FROM idp_smart.document_extractions 
+                WHERE pdf_minio_path LIKE :path
+            """)
+            result = await db.execute(query, {"path": f"%{clean_key}"})
+            row = result.fetchone()
+            
+            if row:
+                task_id, act_type, form_code, json_form, status = row
+                # El process_doc espera json_object_name y pdf_object_name
+                # En el insert_query usamos: "json_path": json_minio_path (que es el nombre del obj)
+                
+                # Solo disparamos si está en estado inicial (evitar bucles)
+                if status == 'INICIO':
+                    logger.info(f"🚀 Disparando procesamiento REACTIVO para tarea {task_id}")
+                    # Actualizar a PENDING_CELERY para marcar que ya lo tomó el evento
+                    update_query = text("UPDATE idp_smart.document_extractions SET status = 'PENDING_CELERY' WHERE task_id = :tid")
+                    await db.execute(update_query, {"tid": task_id})
+                    await db.commit()
+                    
+                    # El worker espera: doc_id, form_json_name, main_doc_name, skip_vision=False
+                    celery_app.send_task(
+                        "process_doc",
+                        args=[str(task_id), json_form, clean_key, False],
+                        task_id=str(task_id)
+                    )
+                else:
+                    logger.info(f"⏭️ Tarea {task_id} ya tiene estado {status}, saltando trigger.")
+        
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"❌ Error en MinIO Webhook: {str(e)}")
+        return {"status": "error", "detail": str(e)}

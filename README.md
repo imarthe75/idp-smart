@@ -1,4 +1,8 @@
-# idp-smart: Intelligent Document Processing - Enterprise Edition 🚀
+<div align="center">
+  <img src="logo_enterprise.png" width="180" alt="idp-smart enterprise logo">
+  <h1>idp-smart: Intelligent Document Processing</h1>
+  <h3>Enterprise Edition 🚀</h3>
+</div>
 
 > **Motor de IA soberano para la extracción semántica y automática de documentos legales, optimizado para PostgreSQL 18, Docling Vision y LLMs de alta precisión.**
 
@@ -112,9 +116,9 @@ http://localhost:5173
 
 ## 💡 Sugerencias Estratégicas (Roadmap Pro)
 
-1.  **MinIO Notif**: Disparar Celery vía Redis Streams para reducir latencia inicial de carga de documentos.
-2.  **RAG Legal**: Integrar **ChromaDB** para que la IA consulte leyes reales durante la extracción si encuentra ambigüedades.
-3.  **Observabilidad**: Panel de **Grafana** para monitorear el consumo de VRAM y el éxito de las extracciones por tipo de acto.
+1.  **✅ MinIO Reactive Trigger (Implementado)**: El sistema ya no "espera" llamadas; reacciona automáticamente al recibir archivos en S3 mediante Webhooks internos, permitiendo ingestas masivas desde cualquier origen.
+2.  **⏳ RAG Legal (Futuro)**: Integración con **ChromaDB/Qdrant** para consulta de leyes y manuales registrales en tiempo real, aumentando la precisión jurídica de la IA.
+3.  **⏳ Observabilidad Pro (Futuro)**: Dashboards de **Grafana + Prometheus** para monitorear el rendimiento del hardware y éxito de extracciones en producción.
 
 ---
 
