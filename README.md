@@ -83,7 +83,11 @@ Soportamos contextos de hasta 128,000 tokens. Los métodos antiguos dividían el
 
 ## 📈 Métricas de Rendimiento y Realidad Técnica
 
-Ajuste de tiempos según el **Proveedor de IA**:
+Ajuste de tiempos según el **Proveedor de IA** elegido:
+
+<div align="center">
+  <img src="performance_chart.png" width="600" alt="idp-smart performance chart">
+</div>
 
 | Escenario | Google Gemini (Cloud ⚡) | LocalAI (CPU Local 🐢) | LocalAI (GPU Local 🚀) |
 |-----------|-------------------------|--------------------------|-------------------------|
