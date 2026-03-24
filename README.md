@@ -165,6 +165,7 @@ docker compose down && docker compose up -d
 2.  **⏳ RAG Legal**: Integración con **ChromaDB/Qdrant** para consulta de leyes.
 3.  **⏳ vLLM Migration**: Sustituir LocalAI por vLLM para throughput masivo (PagedAttention) cuando se superen los 50 expedientes simultáneos.
 4.  **⏳ Observabilidad**: Dashboards de **Grafana + Prometheus**.
+5.  **⏳ Optimización Continua (Auto-Feedback Loop)**: Sistema de auto-ajuste de prompts basado en correcciones manuales. La IA aprenderá de cada corrección humana para no repetir errores y mejorar la precisión quirúrgica del sistema.
 
 ---
 
