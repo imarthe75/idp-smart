@@ -32,7 +32,13 @@
    - Configuración para produc ción
    - Comparativa con single-model
 
-### 5. **.env.docling.examples** ⚙️ CONFIGURACIÓN
+### 6. **RUNPOD_GUIDE.md** ☁️ INFRAESTRUCTURA
+   - Guía de despliegue en RunPod (vía Network Volumes de 50GB)
+   - Requerimientos de GPU (5090, A5000, L40S)
+   - Configuración de Pods para Qwen2-VL y Granite
+   - Integración con el Smart Router
+
+### 7. **.env.docling.examples** ⚙️ CONFIGURACIÓN
    - 7 escenarios completos:
      1. CPU Local (Ahora)
      2. Hybridigo CPU + RunPod
@@ -42,7 +48,7 @@
      6. Testing - Alta Velocidad
      7. Producción - Balanceada
 
-### 6. **CHANGELOG.md** 📝 HISTÓRICO
+### 8. **CHANGELOG.md** 📝 HISTÓRICO
    - Cambios v1.0 → v2.0 → v3.0
    - Features nuevas
    - Mejoras de performance
