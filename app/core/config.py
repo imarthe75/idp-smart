@@ -55,6 +55,13 @@ class Settings(BaseSettings):
 
     llm_provider: str = "localai"
     use_ensemble: bool = False
+
+    # === RUNPOD SERVERLESS PARA LLM (Razonamiento) ===
+    llm_runpod_enabled: bool = False
+    llm_runpod_endpoint: str = ""
+    llm_runpod_api_key: str = ""
+    llm_runpod_timeout: int = 600
+    llm_runpod_model: str = "granite-3.0-8b-instruct"
     
     # === GOOGLE GEMINI (Para validación externa) ===
     google_api_key: str = ""

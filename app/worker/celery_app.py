@@ -53,10 +53,10 @@ def _set_stage(task_id: str, stage: str, status: str = None):
                 conn.execute(
                     text("""
                         UPDATE idp_smart.document_extractions
-                        SET stage_current = :stage, updated_at = NOW()
+                        SET stage_current = :stage, updated_at = NOW(), llm_provider = :llm_provider
                         WHERE task_id = :task_id
                     """),
-                    {"stage": stage, "task_id": uuid.UUID(str(task_id))},
+                    {"stage": stage, "task_id": uuid.UUID(str(task_id)), "llm_provider": settings.llm_provider},
                 )
     except Exception as exc:
         log_event(db_engine, task_id, "SYSTEM", f"No se pudo actualizar stage_current a {stage}: {exc}", level="WARNING")
@@ -65,11 +65,16 @@ def _set_stage(task_id: str, stage: str, status: str = None):
 @celery_app.task(name="process_doc")
 def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, skip_vision: bool = False):
     """
-    Pipeline de extracción semántica de documentos:
-    INICIO → VISION → SCHEMA_LOAD → AGENT → MAPPER → SIMPLIFY → DB_SAVE
-    
-    Si skip_vision=True o ya existe un markdown_minio_path, se salta la etapa VISION.
+    Pipeline de extracción semántica de documentos.
+    Limpia automáticamente prefijos de bucket duplicados.
     """
+    # Limpieza de rutas: Si vienen con el nombre del bucket al inicio, lo quitamos
+    bucket_prefix = f"{settings.minio_bucket}/"
+    if json_minio_object.startswith(bucket_prefix):
+        json_minio_object = json_minio_object[len(bucket_prefix):]
+    if pdf_minio_object.startswith(bucket_prefix):
+        pdf_minio_object = pdf_minio_object[len(bucket_prefix):]
+
     minio_client = get_minio_client()
     doc_markdown = None
 
@@ -77,8 +82,8 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
         # ── INICIO ───────────────────────────────────────────────────────────────
         with db_engine.begin() as conn:
             conn.execute(
-                text("UPDATE idp_smart.document_extractions SET started_at = NOW(), stage_current = 'INICIO' WHERE task_id = :tid"),
-                {"tid": uuid.UUID(str(task_id))}
+                text("UPDATE idp_smart.document_extractions SET started_at = NOW(), stage_current = 'INICIO', llm_provider = :llm_provider WHERE task_id = :tid"),
+                {"tid": uuid.UUID(str(task_id)), "llm_provider": settings.llm_provider}
             )
         
         log_event(db_engine, task_id, "INICIO",
@@ -137,7 +142,13 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
             _set_stage(task_id, "VISION")
             with timed_stage(db_engine, task_id, "VISION", "Extracción Markdown — Documento Principal"):
                 log_event(db_engine, task_id, "VISION", "[OPTIMIZADO] Docling: detección scaneado + paralelismo + cache Redis")
-                doc_markdown = extract_markdown_from_minio(pdf_minio_object)
+                doc_markdown, p_count = extract_markdown_from_minio(pdf_minio_object)
+                # Actualizar page_count en BD
+                with db_engine.begin() as conn:
+                    conn.execute(
+                        text("UPDATE idp_smart.document_extractions SET page_count = :pc WHERE task_id = :tid"),
+                        {"pc": p_count, "tid": task_id},
+                    )
                 if not doc_markdown:
                     doc_markdown = "# Documento Principal\nContenido no extraído."
                     log_event(db_engine, task_id, "VISION",
@@ -156,7 +167,7 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
                     try:
                         obj_name = path.split("idp-documents/")[-1]
                         log_event(db_engine, task_id, "VISION", f"Procesando doc adicional {i+1}: {obj_name}")
-                        add_md = extract_markdown_from_minio(obj_name)
+                        add_md, _ = extract_markdown_from_minio(obj_name)
                         if add_md:
                             header = f"\n\n--- DOCUMENTO ADICIONAL {i+1} ---\n"
                             additional_mds.append(header + add_md)

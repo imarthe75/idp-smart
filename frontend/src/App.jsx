@@ -61,6 +61,9 @@ function TaskCard({ task, onDismiss }) {
             {finished ? (isError ? '✗ Error' : '✓ Completado') : '⟳ En proceso'}
           </span>
           <span className="task-label">{task.actLabel}</span>
+          {progress?.llm_provider && (
+            <span className="provider-badge">{progress.llm_provider.toUpperCase()}</span>
+          )}
         </div>
         <div className="task-times">
           {progress?.is_waiting && !finished && (
@@ -281,8 +284,11 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
               <th onClick={() => requestSort('created_at')} style={{cursor:'pointer', userSelect:'none'}}>
                 Fecha{getSortIcon('created_at')}
               </th>
+              <th>Motor</th>
+              <th>Págs</th>
               <th>Visión</th>
               <th>IA / JSON</th>
+              <th>⚡ Eficiencia</th>
               <th>Total</th>
               <th>Acciones</th>
             </tr>
@@ -301,8 +307,17 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
                   </span>
                 </td>
                 <td>{ex.created_at ? ex.created_at.split('.')[0] : '—'}</td>
+                <td><span className={`engine-chip ${ex.llm_provider}`}>{ex.llm_provider || '—'}</span></td>
+                <td><span className="time-metric">{ex.page_count || '—'}</span></td>
                 <td><span className="time-metric">{ex.docling_duration_s ? `${ex.docling_duration_s}s` : '—'}</span></td>
                 <td><span className="time-metric">{ex.ai_duration_s ? `${ex.ai_duration_s}s` : '—'}</span></td>
+                <td>
+                  <span className="time-metric effort">
+                    {ex.total_duration_s && ex.page_count 
+                      ? `${(ex.total_duration_s / ex.page_count).toFixed(1)}s/pág` 
+                      : '—'}
+                  </span>
+                </td>
                 <td><span className="time-metric bold">{ex.total_duration_s ? fmtTime(Math.round(ex.total_duration_s)) : '—'}</span></td>
                 <td className="actions-cell">
                    <div className="action-buttons">

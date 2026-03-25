@@ -323,7 +323,7 @@ async def list_extractions(limit: int = 100, db: AsyncSession = Depends(get_db))
     query = text("""
         SELECT task_id, status, stage_current, act_type, form_code, pdf_minio_path, 
                markdown_minio_path, created_at, updated_at,
-               docling_duration_s, ai_duration_s, total_duration_s
+               docling_duration_s, ai_duration_s, total_duration_s, llm_provider, page_count
         FROM idp_smart.document_extractions
         ORDER BY created_at DESC
         LIMIT :limit
@@ -384,7 +384,7 @@ async def get_progress(task_id: str, db: AsyncSession = Depends(get_db)):
     """
     query = text("""
         SELECT task_id, status, stage_current, act_type, form_code,
-               created_at, updated_at, started_at, total_duration_s
+               created_at, updated_at, started_at, total_duration_s, llm_provider, page_count
         FROM idp_smart.document_extractions
         WHERE task_id = :task_id
     """)
@@ -443,6 +443,8 @@ async def get_progress(task_id: str, db: AsyncSession = Depends(get_db)):
         "can_submit_more":       True,
         "act_type":              row_dict.get("act_type"),
         "form_code":             row_dict.get("form_code"),
+        "llm_provider":          row_dict.get("llm_provider"),
+        "page_count":            row_dict.get("page_count"),
     }
 
 
@@ -663,7 +665,7 @@ async def minio_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             # Buscar si ya existe la tarea en la DB (creada por la API antes del upload)
             # Buscamos por el final del path para evitar problemas con prefijos de bucket
             query = text("""
-                SELECT task_id, act_type, form_code, json_form, status
+                SELECT task_id, act_type, form_code, json_minio_path, status
                 FROM idp_smart.document_extractions 
                 WHERE pdf_minio_path LIKE :path
             """)
@@ -671,22 +673,23 @@ async def minio_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             row = result.fetchone()
             
             if row:
-                task_id, act_type, form_code, json_form, status = row
+                task_id, act_type, form_code, json_minio_path, status = row
                 # El process_doc espera json_object_name y pdf_object_name
                 # En el insert_query usamos: "json_path": json_minio_path (que es el nombre del obj)
                 
                 # Solo disparamos si está en estado inicial (evitar bucles)
-                if status == 'INICIO':
+                if status == 'INICIO' or status == 'PENDING_CELERY':
                     logger.info(f"🚀 Disparando procesamiento REACTIVO para tarea {task_id}")
                     # Actualizar a PENDING_CELERY para marcar que ya lo tomó el evento
-                    update_query = text("UPDATE idp_smart.document_extractions SET status = 'PENDING_CELERY' WHERE task_id = :tid")
-                    await db.execute(update_query, {"tid": task_id})
-                    await db.commit()
+                    if status == 'INICIO':
+                        update_query = text("UPDATE idp_smart.document_extractions SET status = 'PENDING_CELERY' WHERE task_id = :tid")
+                        await db.execute(update_query, {"tid": task_id})
+                        await db.commit()
                     
                     # El worker espera: doc_id, form_json_name, main_doc_name, skip_vision=False
                     celery_app.send_task(
                         "process_doc",
-                        args=[str(task_id), json_form, clean_key, False],
+                        args=[str(task_id), json_minio_path, clean_key, False],
                         task_id=str(task_id)
                     )
                 else:

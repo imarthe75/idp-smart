@@ -102,6 +102,20 @@ def get_llm():
                 model=settings.ollama_model,
                 temperature=0
             )
+        elif settings.llm_provider == "runpod":
+            print(f"🌪️ Conectando a RunPod Serverless ({settings.llm_runpod_endpoint})...")
+            # RunPod vLLM expone una API OpenAI-compatible en el sub-path /openai/v1
+            runpod_url = f"https://api.runpod.ai/v2/{settings.llm_runpod_endpoint}/openai/v1"
+            return ChatOpenAI(
+                base_url=runpod_url,
+                api_key=settings.llm_runpod_api_key,
+                model=settings.llm_runpod_model,
+                temperature=settings.localai_temperature,
+                max_tokens=settings.localai_max_tokens,
+                timeout=settings.llm_runpod_timeout,
+                model_kwargs={"response_format": {"type": "json_object"}},
+                verbose=True
+            )
         else:
             # Por defecto usar Google Gemini
             if not settings.google_api_key:
@@ -294,18 +308,25 @@ Respuesta (JSON):
     
     # Generar JSON Schema para forzar gramática GBNF
     try:
-        strict_json_schema = convert_to_json_schema(minified_schema)
-        # Inyectar el esquema estricto en el LLM call si es LocalAI
-        if hasattr(llm, "model_kwargs"):
-            llm.model_kwargs["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "rpp_qa_extraction",
-                    "strict": True,
-                    "schema": strict_json_schema
+        # Para LocalAI es preferible usar modo JSON simple para evitar errores de conversion de interface
+        # El mapeo manual posterior se encarga de la consistencia.
+        if settings.llm_provider == "localai":
+             if hasattr(llm, "model_kwargs"):
+                llm.model_kwargs["response_format"] = {"type": "json_object"}
+                print("💎 [SCHEMA] Modo json_object activado para LocalAI")
+        else:
+            # Google/RunPod/OpenAI pueden soportar Structured Outputs mas complejos
+            strict_json_schema = convert_to_json_schema(minified_schema)
+            if hasattr(llm, "model_kwargs"):
+                llm.model_kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "rpp_qa_extraction",
+                        "strict": True,
+                        "schema": strict_json_schema
+                    }
                 }
-            }
-            print(f"💎 [SCHEMA] Gramática GBNF estricta inyectada para {len(strict_json_schema['properties'])} contenedores")
+                print(f"💎 [SCHEMA] Gramática GBNF estricta inyectada para {len(strict_json_schema['properties'])} contenedores")
     except Exception as e_schema:
         print(f"⚠️ No se pudo generar esquema GBNF estricto: {e_schema}. Usando modo JSON genérico.")
         if hasattr(llm, "model_kwargs"):

@@ -599,6 +599,7 @@ class DoclingVisionOptimized:
             is_scanned = self._is_scanned_pdf(tmp_path)
             
             markdown = None
+            page_count = 0
             runpod_used = False
             
             # 4. Intentar RunPod si está habilitado (estrategia HYBRID)
@@ -615,9 +616,20 @@ class DoclingVisionOptimized:
             # 5. Procesar localmente si no hay RunPod o es fallback
             if not markdown:
                 if is_scanned:
+                    # _extract_parallel_local returns markdown string, we need to get pages from it or the file
                     markdown = await self._extract_parallel_local(tmp_path)
+                    try:
+                        import pypdf
+                        with open(tmp_path, 'rb') as f:
+                            page_count = len(pypdf.PdfReader(f).pages)
+                    except: page_count = 1
                 else:
                     markdown = await self._extract_text_optimized(tmp_path)
+                    try:
+                        import pypdf
+                        with open(tmp_path, 'rb') as f:
+                            page_count = len(pypdf.PdfReader(f).pages)
+                    except: page_count = 1
 
             # Fase de Visión Qwen2-VL (Comentado temporalmente por fallos en LocalAI)
             # qwen_analysis = await self._extract_visual_structure_with_qwen2_vl(tmp_path)
@@ -634,7 +646,7 @@ class DoclingVisionOptimized:
             metrics = ProcessingMetrics(
                 object_name=object_name,
                 device_used=device_name,
-                pages_processed=0,  # Parse from markdown if needed
+                pages_processed=page_count,
                 time_elapsed=elapsed,
                 characters_output=len(markdown or ""),
                 cache_hit=False,
@@ -645,7 +657,7 @@ class DoclingVisionOptimized:
             metrics.log()
             
             logger.info(f"✅ Extracción completada: {len(markdown or '')} caracteres en {elapsed:.2f}s")
-            return markdown or ""
+            return markdown or "", page_count
         
         finally:
             if tmp_path and os.path.exists(tmp_path):
@@ -656,10 +668,11 @@ class DoclingVisionOptimized:
 vision_engine = DoclingVisionOptimized()
 
 
-async def extract_markdown_from_minio(object_name: str) -> str:
+async def extract_markdown_from_minio(object_name: str) -> tuple[str, int]:
     """
     Punto de entrada público para extracción de OCR.
     Usa todas las optimizaciones automáticamente.
+    Retorna (markdown_text, page_count)
     """
     return await vision_engine.extract_markdown_from_minio(object_name)
 
@@ -668,10 +681,10 @@ async def extract_markdown_from_minio(object_name: str) -> str:
 # BACKWARD COMPATIBILITY
 # ============================================
 
-def extract_markdown_from_minio_sync(object_name: str) -> str:
+def extract_markdown_from_minio_sync(object_name: str) -> tuple[str, int]:
     """
     Versión síncrona para compatibilidad con Celery.
-    Ejecuta la versión async en un nuevo event loop si es necesario.
+    Retorna (markdown_text, page_count)
     """
     import asyncio
     import sys
