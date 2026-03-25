@@ -1,0 +1,8 @@
+{
+  "model": "granite-vision",
+  "messages": [
+    {"role": "user", "content": "Dame un JSON con un solo campo 'status': 'ok'"}
+  ],
+  "response_format": {"type": "json_object"},
+  "max_tokens": 50
+}

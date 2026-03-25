@@ -43,7 +43,7 @@ services:
       - minio
     entrypoint: >
       /bin/sh -c "
-      until (/usr/bin/mc config host add myminio http://minio:9000 admin minio_password123) do echo 'Waiting for MinIO...' && sleep 1; done;
+      until (/usr/bin/mc alias set myminio http://minio:9000 admin minio_password123) do echo 'Waiting for MinIO...' && sleep 1; done;
       /usr/bin/mc mb -p myminio/idp-documents;
       /usr/bin/mc event add myminio/idp-documents arn:minio:sqs::primary:webhook --event put;
       echo 'MinIO Reactivity Configured!';
@@ -69,7 +69,14 @@ services:
   worker:
     build: .
     container_name: idp_worker
-    command: celery -A worker.celery_app worker --loglevel=info -c 1
+    entrypoint: >
+      sh -c "
+      if [ \"$LLM_PROVIDER\" = \"runpod\" ]; then
+        echo '🚀 RunPod Provider detectado. Ajustando timeouts de red a 600s...';
+      fi;
+      celery -A worker.celery_app beat --loglevel=info --detach;
+      celery -A worker.celery_app worker --loglevel=info -c 1
+      "
     volumes:
       - ./app:/app
     env_file:
@@ -82,16 +89,25 @@ services:
       - "host.docker.internal:host-gateway"
 
   localai:
-    image: localai/localai:latest-cpu
+    # Use 'localai/localai:latest-gpu-nvidia-cuda-12' and uncomment 'deploy' section below if an NVIDIA GPU is present.
+    image: localai/localai:latest
     container_name: idp_localai
     ports:
       - "8080:8080"
     environment:
       - THREADS=4
       - MODELS_PATH=/models
+      - DEBUG=true
     volumes:
       - ./localai/models_clean:/models
       - localai_data:/build
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
     restart: always
     extra_hosts:
       - "host.docker.internal:host-gateway"

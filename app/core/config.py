@@ -1,83 +1,132 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-    # Cloud-Ready & Standalone Mode
+    # ── Modo de operación ──────────────────────────────────────────────────────
     idp_smart_mode: str = "standalone"
-    force_cpu: bool = True
+    force_cpu: bool = False  # False = detección automática
 
+    # ── Base de datos ──────────────────────────────────────────────────────────
     db_host: str = "localhost"
     db_port: int = 5432
     db_user: str = "postgres"
     db_password: str = ""
     db_name: str = "postgres"
-    valkey_url: str = "redis://localhost:6379/0" 
-    
-    # Minio Configuration
+    valkey_url: str = "redis://localhost:6379/0"
+
+    # ── MinIO ──────────────────────────────────────────────────────────────────
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minio_user"
     minio_secret_key: str = "minio_password"
     minio_bucket: str = "idp-documents"
-    minio_secure: bool = False
+    minio_secure: bool = False  # True solo si MinIO usa HTTPS en producción
 
-    # Pipeline de Inferencia Especializado (LocalAI)
+    # ── Selector de motores ────────────────────────────────────────────────────
+    # OCR_ENGINE  : docling | google_doc_ai | aws_textract
+    # LLM_PROVIDER: vllm | google | anthropic | openai
+    ocr_engine: str = "docling"
+    llm_provider: str = "google"
+
+    # ── Smart Router / Cloud Fallback ──────────────────────────────────────────
+    enable_cloud_fallback: bool = False
+    cloud_fallback_provider: str = "google"
+    max_local_queue: int = 5            # umbral de cola para derivar a cloud
+
+    # ── Motor LOCAL (VLLM — Dell / RunPod Pod) ─────────────────────────────────
+    local_api_url: str = "http://localhost:8000"
+    local_llm_model: str = "granite-3.0-8b-instruct"
+    local_llm_timeout: int = 300
+
+    # ── RunPod Lifecycle Management ────────────────────────────────────────────
+    runpod_enabled: bool = False
+    runpod_api_key: Optional[str] = None
+    runpod_pod_docling_id: str = ""     # ID del pod de Docling GPU
+    runpod_pod_llm_id: str = ""         # ID del pod de LLM (VLLM)
+    runpod_idle_timeout: int = 300      # segundos de inactividad → apagar
+    # URLs heredadas (compatibilidad)
+    runpod_docling_url: Optional[str] = None
+    runpod_vision_url: Optional[str] = None
+    runpod_llm_url: Optional[str] = None
+    runpod_timeout: int = 600
+
+    # ── Docling CPU Mode ───────────────────────────────────────────────────────
+    docling_chunk_size: int = 10        # páginas por chunk en CPU
+    omp_num_threads: int = 0            # 0 = auto (hardware_detector)
+    mkl_num_threads: int = 0            # 0 = auto (hardware_detector)
+
+    # ── Google (Gemini) ────────────────────────────────────────────────────────
+    google_api_key: Optional[str] = None
+    gemini_model: str = "gemini-2.5-flash"
+    google_docai_project_id: Optional[str] = None
+    google_docai_location: str = "us"
+    google_docai_processor_id: Optional[str] = None
+
+    # ── Anthropic (Claude) ─────────────────────────────────────────────────────
+    anthropic_api_key: Optional[str] = None
+    claude_model: str = "claude-3-5-sonnet-20241022"
+
+    # ── OpenAI ────────────────────────────────────────────────────────────────
+    openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-4o-mini"
+
+    # ── AWS ───────────────────────────────────────────────────────────────────
+    aws_region: str = "us-east-1"
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+
+    # ── LocalAI (legacy — compatibilidad) ─────────────────────────────────────
     localai_url: str = "http://localhost:8080/v1"
     model_vision: str = "qwen2-vl"
     model_reasoning: str = "granite-3.0-8b-instruct"
+    model_vision_name: str = "qwen2-vl-7b-instruct"
+    model_reasoning_name: str = "granite-3.0-8b-instruct"
     localai_temperature: float = 0.1
     localai_max_tokens: int = 2048
     localai_timeout: int = 300
-    
-    # === VISION OPTIMIZATION (Docling) - CPU/GPU/RunPod Adaptive ===
+
+    # ── Vision Optimization (Docling adaptive) ─────────────────────────────────
     vision_detect_scanned_threshold: int = 100
-    vision_parallel_workers: int = 4
+    vision_parallel_workers: int = 1
     vision_use_cache: bool = True
     vision_cache_ttl: int = 604800
     vision_ocr_quality: str = "standard"
-    
+    vision_device: str = "auto"
+    vision_gpu_layers: int = 0
     vision_allow_gpu: bool = True
     vision_gpu_monitor_interval: int = 5
     vision_gpu_memory_threshold_mb: float = 512.0
-    
-    # RunPod Serverless para Docling
-    docling_runpod_enabled: bool = False
-    docling_runpod_endpoint: str = ""
-    docling_runpod_api_key: str = ""
-    docling_runpod_timeout: int = 300
-    docling_runpod_max_retries: int = 3
-    docling_runpod_batch_size: int = 4
-    docling_runpod_fallback_to_local: bool = True
-    
-    vision_device: str = "auto"
-    vision_gpu_layers: int = 0
 
-    llm_provider: str = "localai"
+    # ── Ensemble (legacy) ─────────────────────────────────────────────────────
     use_ensemble: bool = False
-
-    # === RUNPOD SERVERLESS PARA LLM (Razonamiento) ===
-    llm_runpod_enabled: bool = False
-    llm_runpod_endpoint: str = ""
-    llm_runpod_api_key: str = ""
-    llm_runpod_timeout: int = 600
-    llm_runpod_model: str = "granite-3.0-8b-instruct"
-    
-    # === GOOGLE GEMINI (Para validación externa) ===
-    google_api_key: str = ""
-    
-    # === QWEN / RUNPOD (Ensemble) ===
+    ensemble_provider: str = "localai"
+    ensemble_strategy: str = "sequential"
+    ensemble_confidence_threshold: float = 0.7
     qwen_base_url: str = "http://localai:8080/v1"
     qwen_model: str = "qwen2.5:7b"
     qwen_temperature: float = 0.1
     qwen_runpod_endpoint: str = ""
     qwen_runpod_api_key: str = ""
-    ensemble_provider: str = "localai"
-    ensemble_strategy: str = "sequential"
-    ensemble_confidence_threshold: float = 0.7
+
+    # ── Compatibilidad RunPod legacy ───────────────────────────────────────────
+    llm_runpod_timeout: int = 600
+    llm_runpod_model: str = "granite-3.0-8b-instruct"
+    docling_runpod_timeout: int = 600
+    docling_runpod_max_retries: int = 3
+    docling_runpod_fallback_to_local: bool = True
 
     @property
     def database_url(self) -> str:
-        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+        return (
+            f"postgresql+asyncpg://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
 
 settings = Settings()

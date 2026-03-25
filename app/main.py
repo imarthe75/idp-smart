@@ -50,7 +50,7 @@ async def get_pre_coded_forms(db: AsyncSession = Depends(get_db)):
     """
     Obtiene la lista de tipos de acto disponibles para procesar.
     
-    Hace un JOIN entre `cfdeffrmpre` y `ctactos` para retornar:
+    Hace un JOIN entre `cfdeffrmpre` e `ctactos` para retornar:
     - `form_code`: Código corto del acto (ej. `BI34`).
     - `dsactocorta`: Nombre corto del tipo de acto (ej. `BI34`).
     - `dsacto`: Descripción completa del tipo de acto (ej. `Primera Inscripción`).
@@ -76,6 +76,25 @@ async def get_pre_coded_forms(db: AsyncSession = Depends(get_db)):
         acts.append(row_dict)
 
     return {"total": len(acts), "acts": acts}
+
+@app.get("/api/v1/benchmarks", tags=["Administración"])
+async def get_hardware_benchmarks(db: AsyncSession = Depends(get_db)):
+    """
+    Retorna métricas de rendimiento por GPU para análisis de infraestructura.
+    """
+    query = text("""
+        SELECT 
+            b.*,
+            e.act_type,
+            e.page_count
+        FROM idp_smart.hardware_benchmarks b
+        LEFT JOIN idp_smart.document_extractions e ON b.task_id = e.task_id
+        ORDER BY b.created_at DESC
+        LIMIT 100
+    """)
+    result = await db.execute(query)
+    benchmarks = [dict(row._mapping) for row in result.fetchall()]
+    return {"total": len(benchmarks), "benchmarks": benchmarks}
 
 @app.post("/api/v1/process", tags=["Procesamiento"])
 async def process_document(
@@ -644,57 +663,74 @@ async def view_markdown(task_id: str, db: AsyncSession = Depends(get_db)):
 async def minio_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Recibe notificaciones de MinIO cuando un archivo se sube al bucket.
-    Si el archivo es un PDF/Imagen en el bucket correcto, dispara el procesamiento.
+    Solo reacciona a PDFs (ignora form.json, markdown, etc.) para evitar
+    disparos duplicados. Incluye retry para manejar el race condition entre
+    el commit del INSERT y la llegada del evento.
     """
+    import asyncio
+    from urllib.parse import unquote
+
     try:
         data = await request.json()
         records = data.get("Records", [])
         for record in records:
             s3 = record.get("s3")
-            if not s3: continue
-            
+            if not s3:
+                continue
+
             bucket = s3["bucket"]["name"]
             key = s3["object"]["key"]
-            
-            # El key viene URL-encoded desde MinIO
-            from urllib.parse import unquote
             clean_key = unquote(key)
-            
+
             logger.info(f"🔔 MinIO Event: {record.get('eventName')} en {bucket}/{clean_key}")
-            
-            # Buscar si ya existe la tarea en la DB (creada por la API antes del upload)
-            # Buscamos por el final del path para evitar problemas con prefijos de bucket
-            query = text("""
-                SELECT task_id, act_type, form_code, json_minio_path, status
-                FROM idp_smart.document_extractions 
-                WHERE pdf_minio_path LIKE :path
-            """)
-            result = await db.execute(query, {"path": f"%{clean_key}"})
-            row = result.fetchone()
-            
-            if row:
-                task_id, act_type, form_code, json_minio_path, status = row
-                # El process_doc espera json_object_name y pdf_object_name
-                # En el insert_query usamos: "json_path": json_minio_path (que es el nombre del obj)
-                
-                # Solo disparamos si está en estado inicial (evitar bucles)
-                if status == 'INICIO' or status == 'PENDING_CELERY':
-                    logger.info(f"🚀 Disparando procesamiento REACTIVO para tarea {task_id}")
-                    # Actualizar a PENDING_CELERY para marcar que ya lo tomó el evento
-                    if status == 'INICIO':
-                        update_query = text("UPDATE idp_smart.document_extractions SET status = 'PENDING_CELERY' WHERE task_id = :tid")
-                        await db.execute(update_query, {"tid": task_id})
-                        await db.commit()
-                    
-                    # El worker espera: doc_id, form_json_name, main_doc_name, skip_vision=False
-                    celery_app.send_task(
-                        "process_doc",
-                        args=[str(task_id), json_minio_path, clean_key, False],
-                        task_id=str(task_id)
-                    )
-                else:
-                    logger.info(f"⏭️ Tarea {task_id} ya tiene estado {status}, saltando trigger.")
-        
+
+            # ── Solo procesar PDFs — ignorar form.json, markdown, imágenes ──────
+            # Esto elimina disparos duplicados y el race condition del form.json
+            if not clean_key.lower().endswith(".pdf"):
+                logger.info(f"⏭️ Ignorando archivo no-PDF: {clean_key}")
+                continue
+
+            # ── Retry: esperar hasta 3s a que el INSERT de la API sea visible ───
+            # Race condition: MinIO puede notificar ANTES de que la API haga commit.
+            row = None
+            for attempt in range(1, 7):  # 6 intentos × 0.5s = hasta 3s de espera
+                await db.rollback()  # limpiar caché de la sesión para ver datos nuevos
+                query = text("""
+                    SELECT task_id, act_type, form_code, json_minio_path, status
+                    FROM idp_smart.document_extractions
+                    WHERE pdf_minio_path LIKE :path
+                """)
+                result = await db.execute(query, {"path": f"%{clean_key}"})
+                row = result.fetchone()
+                if row:
+                    break
+                logger.info(f"⏳ Intento {attempt}/6: tarea aún no en DB, esperando 0.5s... ({clean_key})")
+                await asyncio.sleep(0.5)
+
+            if not row:
+                logger.warning(f"⚠️ PDF {clean_key} subido pero no se encontró tarea en DB tras 3s. El Beat la recuperará.")
+                continue
+
+            task_id, act_type, form_code, json_minio_path, status = row
+
+            # Solo disparamos si está en estado inicial (evitar bucles)
+            if status in ("INICIO", "PENDING_CELERY"):
+                logger.info(f"🚀 Disparando procesamiento REACTIVO para tarea {task_id}")
+                # Marcar como PENDING_CELERY y encolar
+                await db.execute(
+                    text("UPDATE idp_smart.document_extractions SET status = 'PENDING_CELERY', updated_at = NOW() WHERE task_id = :tid"),
+                    {"tid": task_id}
+                )
+                await db.commit()
+
+                celery_app.send_task(
+                    "process_doc",
+                    args=[str(task_id), json_minio_path, clean_key, False],
+                    task_id=str(task_id)
+                )
+            else:
+                logger.info(f"⏭️ Tarea {task_id} ya tiene estado {status}, saltando trigger.")
+
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"❌ Error en MinIO Webhook: {str(e)}")

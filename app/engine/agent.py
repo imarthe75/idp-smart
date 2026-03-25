@@ -1,11 +1,13 @@
 import os
 import re
 import json
+import base64
 from core.config import settings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage
 from engine.ensemble import get_ensemble_llm  # NUEVO: Soporte ensemble
 
 def create_simplified_json(extracted_data: dict, schema: dict) -> dict:
@@ -72,19 +74,18 @@ def create_simplified_json(extracted_data: dict, schema: dict) -> dict:
 def get_llm():
     """
     Instancia el LLM configurado en Settings.
-    Soporta Google (Gemini), Ollama (Legacy), LocalAI, y Ensemble (Granite+Qwen).
+    Soporta Google Gemini, Ollama (Legacy), LocalAI, RunPod y Ensemble.
+    Valores aceptados para LLM_PROVIDER: gemini | google | local | localai | runpod | ollama
     """
     try:
         # ¿Usar ensemble?
         if settings.use_ensemble:
-            print(f"🔀 ENSEMBLE activado: {settings.ensemble_provider} ({settings.ensemble_strategy})")
+            print(f"ENSEMBLE activado: {settings.ensemble_provider} ({settings.ensemble_strategy})")
             return get_ensemble_llm(use_ensemble=True)
-        
+
         # Sino, usar LLM simple
         if settings.llm_provider == "localai":
-            print(f"🚀 Conectando a LocalAI en {settings.localai_url} con modelo {settings.model_reasoning}...")
-            # Habilitamos response_format: json_object para forzar al backend (llama-cpp)
-            # a usar una gramática JSON que evite textos planos o markdown roto.
+            print(f"Conectando a LocalAI en {settings.localai_url} con modelo {settings.model_reasoning}...")
             return ChatOpenAI(
                 base_url=settings.localai_url,
                 api_key="not-needed",
@@ -95,39 +96,39 @@ def get_llm():
                 model_kwargs={"response_format": {"type": "json_object"}},
                 verbose=True
             )
+        elif settings.llm_provider == "runpod":
+            print(f"Conectando a RunPod en {settings.runpod_llm_url}...")
+            return ChatOpenAI(
+                base_url=settings.runpod_llm_url,
+                api_key=settings.runpod_api_key,
+                model=settings.llm_runpod_model,
+                temperature=settings.localai_temperature,
+                max_tokens=settings.localai_max_tokens,
+                timeout=settings.runpod_llm_timeout,
+                model_kwargs={"response_format": {"type": "json_object"}},
+                verbose=True
+            )
         elif settings.llm_provider == "ollama":
-            print(f"🔧 Conectando a LLM Local (Ollama) en {settings.ollama_base_url} con modelo {settings.ollama_model}...")
+            print(f"Conectando a Ollama en {settings.ollama_base_url} con modelo {settings.ollama_model}...")
             return ChatOllama(
                 base_url=settings.ollama_base_url,
                 model=settings.ollama_model,
                 temperature=0
             )
-        elif settings.llm_provider == "runpod":
-            print(f"🌪️ Conectando a RunPod Serverless ({settings.llm_runpod_endpoint})...")
-            # RunPod vLLM expone una API OpenAI-compatible en el sub-path /openai/v1
-            runpod_url = f"https://api.runpod.ai/v2/{settings.llm_runpod_endpoint}/openai/v1"
-            return ChatOpenAI(
-                base_url=runpod_url,
-                api_key=settings.llm_runpod_api_key,
-                model=settings.llm_runpod_model,
-                temperature=settings.localai_temperature,
-                max_tokens=settings.localai_max_tokens,
-                timeout=settings.llm_runpod_timeout,
-                model_kwargs={"response_format": {"type": "json_object"}},
-                verbose=True
-            )
         else:
-            # Por defecto usar Google Gemini
+            # Gemini (valores aceptados: 'gemini' o 'google' por retrocompatibilidad)
             if not settings.google_api_key:
                 print("Error: No se ha configurado la GOOGLE_API_KEY.")
                 return None
             os.environ["GOOGLE_API_KEY"] = settings.google_api_key
+            gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+            print(f"Conectando a Google Gemini ({gemini_model})...")
             return ChatGoogleGenerativeAI(
-                model="gemini-flash-latest",
+                model=gemini_model,
                 temperature=0
             )
     except Exception as e:
-        print(f"❌ Error cargando el LLM ({settings.llm_provider}): {e}")
+        print(f"Error cargando el LLM ({settings.llm_provider}): {e}")
         return None
 
 def minify_schema(schema):
@@ -217,12 +218,13 @@ def convert_to_json_schema(schema_minified: dict) -> dict:
         "additionalProperties": False
     }
 
-def extract_form_data(markdown_text: str, json_form_schema: dict) -> dict:
+from langchain_core.messages import HumanMessage
+import base64
+
+def extract_form_data(document_md: str, form_schema: dict, visual_analysis: str = "", image_paths: list[str] = []) -> dict:
     """
-    Extrae datos legales de alta precisión mapeando TODOS los campos del esquema al documento.
-    
-    Retorna: dict con estructura uuid → value
-    Cada UUID del esquema recibe su valor correspondiente del documento.
+    [PASO 3: RAZONAMIENTO] Extrae datos del Markdown usando Esquema + Análisis Visual.
+    Implementa la lógica de 'Fusión Legal' (Multimodal en Gemini, Texto en otros).
     """
     template = """
 EXTRACCIÓN DE DATOS LEGALES CON MÁXIMA PRECISIÓN
@@ -234,54 +236,28 @@ INSTRUCCIONES CRÍTICAS:
 
 1️⃣ LECTURA COMPLETA:
    - Lee TODA la información del documento
-   - Si hay 3 solicitantes, TODOS deben extraerse (no solo el primero)
-   - Si hay 2 titulares con porcentajes (20%, 80%), ambos deben aparecer
-   - Busca TODOS los "Derechos de inscripción" (no solo el primero)
+   - Si hay múltiples solicitantes o titulares, extráelos TODOS.
 
 2️⃣ ESTRUCTURA DE RETORNO - UUID → VALUE:
-   El JSON retornado tiene esta estructura EXACTA:
-   {{
-     "uuid-campo-simple": "valor_exacto",
-     "uuid-campo-fecha": "YYYY-MM-DD",
-     "uuid-campo-numero": 12345,
-     "uuid-contenedor-repetible": [
-       {{"uuid-sub1": "valor1", "uuid-sub2": "valor2"}},
-       {{"uuid-sub1": "valor1b", "uuid-sub2": "valor2b"}},
-       {{"uuid-sub1": "valor1c", "uuid-sub2": "valor2c"}}
-     ]
-   }}
+   El JSON retornado debe mapear los UUIDs del esquema a sus valores encontrados.
 
-3️⃣ MANEJO DE REPETIBLES (CRÍTICO):
-   Si el esquema tiene un contenedor que aparece múltiples veces en el documento:
-   - ¿3 solicitantes? → Retorna array con 3 objetos, cada uno con sus uuids
-   - ¿2 titulares? → Retorna array con 2 objetos
-   - ¿3 recibos de derechos? → Retorna array con 3 objetos
-   
-   SIEMPRE que haya múltiples instancias, retorna un ARRAY, no un objeto único.
+3️⃣ VALORES EXACTOS:
+   - Nombres: EXACTOS como aparecen.
+   - Fechas: YYYY-MM-DD.
+   - Montos y Porcentajes: Solo números.
 
-4️⃣ VALORES EXACTOS:
-   - Nombres: EXACTOS como aparecen (respeta MAYÚSCULAS/minúsculas)
-   - Fechas: Convierte a YYYY-MM-DD (ej: "1995-09-28")
-   - Montos: Solo número sin $ ni comas (ej: 41540)
-   - Porcentajes: Solo número (ej: 20, 40, 80 - SIN símbolo %)
-   - Estados/Municipios: Exacto como en documento
-   - Selecciones (SI/NO, estado civil): Exacto del documento
+4️⃣ FUSIÓN LEGAL (MÁXIMA PRIORIDAD):
+   Fusiona el texto de Docling con la evidencia visual de las imágenes (firmas, sellos, hologramas).
+   SI HAY CONFLICTO ENTRE EL OCR Y LA IMAGEN, PREVALECE LA IMAGEN.
+   - Si el OCR no lee un nombre pero en la imagen hay una firma con sello claro, extrae el dato de la imagen.
 
-5️⃣ VALIDACIÓN LÓGICA:
-   - Si hay titular 1 con 20%, busca dónde están los otros 80%
-   - Si hay 3 solicitantes, debe haber registro de todos (revisión cruzada en documento)
-   - Suma de porcentajes: 3 titulares → sus % deben sumar 100%
-   - Fechas coherentes: inscripción ≥ fecha escritura
-
-6️⃣ MANEJO DE AUSENCIAS:
-   - Si un campo NO existe en el documento → usa null (NO strings vacíos)
-   - Si faltan datos → null, no inventes
-   - Si está parcialmente legible → usa lo legible, marca lo dudoso con "?"
+EVIDENCIA VISUAL (Puerto 8001):
+{visual_analysis}
 
 ESQUEMA (estructura y UUIDs):
 {form_schema}
 
-DOCUMENTO:
+DOCUMENTO (Markdown):
 {document_md}
 
 Respuesta (JSON):
@@ -289,64 +265,49 @@ Respuesta (JSON):
     
     llm = get_llm()
     if not llm:
-        print("LangChain LLM no configurado. Regresando dummy response.")
+        print("LLM no configurado.")
         return {}
-        
-    prompt = PromptTemplate.from_template(template)
-    chain = prompt | llm
     
-    # Para un context_window de 8k-16k, limitamos el markdown para asegurar que quepa el esquema y las instrucciones.
-    # 30k caracteres es aprox 7k-10k tokens, dejando espacio suficiente.
-    safe_markdown = (markdown_text or "")[:30000] 
-    
-    import time
-    import psutil
-    
-    # Debug info: Minify schema before dumping to save context length matching the model's 8k token limit
-    minified_schema = minify_schema(json_form_schema)
+    minified_schema = minify_schema(form_schema)
     schema_str = json.dumps(minified_schema, indent=2)
+    safe_markdown = (document_md or "")[:30000]
     
-    # Generar JSON Schema para forzar gramática GBNF
-    try:
-        # Para LocalAI es preferible usar modo JSON simple para evitar errores de conversion de interface
-        # El mapeo manual posterior se encarga de la consistencia.
-        if settings.llm_provider == "localai":
-             if hasattr(llm, "model_kwargs"):
-                llm.model_kwargs["response_format"] = {"type": "json_object"}
-                print("💎 [SCHEMA] Modo json_object activado para LocalAI")
-        else:
-            # Google/RunPod/OpenAI pueden soportar Structured Outputs mas complejos
-            strict_json_schema = convert_to_json_schema(minified_schema)
-            if hasattr(llm, "model_kwargs"):
-                llm.model_kwargs["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "rpp_qa_extraction",
-                        "strict": True,
-                        "schema": strict_json_schema
-                    }
-                }
-                print(f"💎 [SCHEMA] Gramática GBNF estricta inyectada para {len(strict_json_schema['properties'])} contenedores")
-    except Exception as e_schema:
-        print(f"⚠️ No se pudo generar esquema GBNF estricto: {e_schema}. Usando modo JSON genérico.")
-        if hasattr(llm, "model_kwargs"):
-            llm.model_kwargs["response_format"] = {"type": "json_object"}
+    final_prompt = template.format(
+        visual_analysis=visual_analysis or "No se proporcionó análisis adicional.",
+        form_schema=schema_str,
+        document_md=safe_markdown
+    )
 
-    print(f"📏 [DEBUG] Tamaño Markdown: {len(safe_markdown)} chars | Tamaño Esquema Original: {len(json.dumps(json_form_schema))} chars | Esquema Minimizado: {len(schema_str)} chars")
-    
+    import time
     start_time = time.time()
-    model_info = "Gemini" if settings.llm_provider == "google" else settings.model_reasoning
-    print(f"🧠 [Razonamiento] Enviando prompt ({settings.llm_provider}) usando {model_info}...")
-    mem_before = psutil.Process().memory_info().rss / 1024 / 1024
-    
-    response = chain.invoke({
-        "document_md": safe_markdown,
-        "form_schema": schema_str
-    })
-    
+
+    if settings.llm_provider in ("gemini", "google") and image_paths:
+        print(f"[Multimodal] Enviando {len(image_paths)} imagen(es) a Gemini para Fusion Legal...")
+        content = [{"type": "text", "text": final_prompt}]
+
+        for img_path in image_paths:
+            if os.path.exists(img_path):
+                with open(img_path, "rb") as f:
+                    img_data = base64.b64encode(f.read()).decode("utf-8")
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{img_data}"}
+                    })
+
+        message = HumanMessage(content=content)
+        response = llm.invoke([message])
+    else:
+        print(f"[Razonamiento] Enviando prompt ({settings.llm_provider})...")
+        prompt_tmpl = PromptTemplate.from_template(template)
+        chain = prompt_tmpl | llm
+        response = chain.invoke({
+            "document_md": safe_markdown,
+            "form_schema": schema_str,
+            "visual_analysis": visual_analysis
+        })
+
     elapsed = time.time() - start_time
-    mem_after = psutil.Process().memory_info().rss / 1024 / 1024
-    print(f"✅ [Razonamiento] Completado en {elapsed:.2f}s | Memoria CPU: {mem_before:.1f}MB -> {mem_after:.1f}MB")
+    print(f"✅ [Razonamiento] Completado en {elapsed:.2f}s")
     
     text_response = response.content.strip()
     print(f"📝 [DEBUG] Respuesta RAW (primeros 100 chars): {text_response[:100]}...")
