@@ -550,7 +550,7 @@ class DoclingVisionOptimized:
             logger.warning(f"Error en extraccion visual con Qwen2-VL: {e}")
             return "\n\n--- ANÁLISIS VISUAL (QWEN2-VL) FALLIDO O NO DISPONIBLE ---\n"
     
-    async def extract_markdown_from_minio(self, object_name: str) -> str:
+    async def extract_markdown_from_minio(self, object_name: str) -> tuple[str, int]:
         """
         Extrae markdown de PDF en MinIO con estrategia adaptativa:
         1. Cache check (O(1) - instant si hit)
@@ -566,19 +566,28 @@ class DoclingVisionOptimized:
         logger.info(f"🔍 Iniciando extracción: {object_name}")
         
         # 1. Verificar cache (INSTANT si hit - 0.1s)
-        cached_result = self.cache.get(object_name)
-        if cached_result:
+        # El cache guarda "markdown|page_count"
+        cached_data = self.cache.get(object_name)
+        if cached_data:
+            markdown = cached_data
+            page_count = 0
+            if "|" in cached_data:
+                parts = cached_data.split("|", 1)
+                markdown = parts[0]
+                try: page_count = int(parts[1])
+                except: page_count = 0
+
             metrics = ProcessingMetrics(
                 object_name=object_name,
                 device_used="CACHE",
-                pages_processed=0,
+                pages_processed=page_count,
                 time_elapsed=(datetime.now() - start_time).total_seconds(),
-                characters_output=len(cached_result),
+                characters_output=len(markdown),
                 cache_hit=True,
                 runpod_used=False
             )
             metrics.log()
-            return cached_result
+            return markdown, page_count
         
         # 2. Descargar PDF
         tmp_path = None
@@ -592,7 +601,7 @@ class DoclingVisionOptimized:
                 tmp_path = tmp_file.name
         except Exception as e:
             logger.error(f"Error descargando de MinIO: {e}")
-            return ""
+            return "", 0
         
         try:
             # 3. Detectar tipo de PDF
@@ -637,7 +646,8 @@ class DoclingVisionOptimized:
             
             # 6. Guardar en cache
             if markdown:
-                self.cache.set(object_name, markdown)
+                # Cacheamos con separador para recuperar page_count
+                self.cache.set(object_name, f"{markdown}|{page_count}")
             
             # Log métricas
             elapsed = (datetime.now() - start_time).total_seconds()
