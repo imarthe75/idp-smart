@@ -83,3 +83,4 @@ localai/config/idp-smart-*.yaml
 ._*
 .DS_Store
 Thumbs.db
+app/celerybeat-schedule
