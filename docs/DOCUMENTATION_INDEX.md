@@ -20,25 +20,30 @@
    - Roadmap GPU/RunPod
    - Troubleshooting
 
-### 3. **QUICK_START.md** ⚡ OPERACIONAL
+### 3. **BENCHMARKING_GUIDE.md** 🏎️ RENDIMIENTO
+   - Cómo correr mediciones de Docling (CPU vs GPU vs RunPod)
+   - Scripts de `test_localai.py`
+   - Uso de caches predictivos para acelerar pruebas locales
+
+### 4. **QUICK_START.md** ⚡ OPERACIONAL
    - Guía 5 minutos (paso a paso)
    - Verificación de instalación
    - Medición de performance
    - Casos de uso específicos
 
-### 4. **ENSEMBLE_GRANITE_QWEN.md** 🎯 ESTRATEGIA
+### 5. **ENSEMBLE_GRANITE_QWEN.md** 🎯 ESTRATEGIA
    - Cuándo y por qué usar ensemble
    - Estrategias: sequential, parallel, adaptive
    - Configuración para produc ción
    - Comparativa con single-model
 
-### 6. **RUNPOD_GUIDE.md** ☁️ INFRAESTRUCTURA
+### 7. **RUNPOD_GUIDE.md** ☁️ INFRAESTRUCTURA
    - Guía de despliegue en RunPod (vía Network Volumes de 50GB)
    - Requerimientos de GPU (5090, A5000, L40S)
    - Configuración de Pods para Qwen2-VL y Granite
    - Integración con el Smart Router
 
-### 7. **.env.docling.examples** ⚙️ CONFIGURACIÓN
+### 8. **.env.docling.examples** ⚙️ CONFIGURACIÓN
    - 7 escenarios completos:
      1. CPU Local (Ahora)
      2. Hybridigo CPU + RunPod
@@ -48,7 +53,7 @@
      6. Testing - Alta Velocidad
      7. Producción - Balanceada
 
-### 8. **CHANGELOG.md** 📝 HISTÓRICO
+### 9. **CHANGELOG.md** 📝 HISTÓRICO
    - Cambios v1.0 → v2.0 → v3.0
    - Features nuevas
    - Mejoras de performance
@@ -115,7 +120,6 @@ idp-smart/
 ├── .env.docling.examples             # ⚙️  7 Config scenarios
 │
 ├── FORM_SCHEMA_GUIDE.md              # Guía de esquemas JSON
-├── MIGRATION_SUMMARY.txt             # Resumen migraciones históricas
 │
 └── [ELIMINAR]:
     ├── ARQUITECTURA_LOCALAI.md       ❌
