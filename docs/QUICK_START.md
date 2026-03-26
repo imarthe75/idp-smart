@@ -6,23 +6,37 @@ Este documento describe los pasos EXACTOS para levantar el proyecto entero en un
 
 ## 🛠️ Paso 0: Preparación del Entorno (Servidor Limpio)
 
-Si estás en un servidor Linux (Ubuntu/Debian) recién instalado, ejecuta los siguientes comandos para instalar las herramientas base necesarias:
+Ejecuta los comandos correspondientes según tu distribución de Linux:
 
-### 1. Instalar Git
+### **Opción 1: Ubuntu / Debian**
 ```bash
+# 1. Instalar Git
 sudo apt update && sudo apt install -y git
-```
 
-### 2. Instalar Docker y Docker Compose V2
-```bash
-# Instalar Docker
+# 2. Instalar Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 
-# Instalar Docker Compose V2 (Si no está incluido)
+# 3. Instalar Docker Compose V2
 sudo apt install -y docker-compose-v2
+```
 
-# Dar permisos al usuario actual (requiere cerrar sesión y volver a entrar)
+### **Opción 2: RHEL / AlmaLinux / Rocky Linux**
+```bash
+# 1. Instalar Git
+sudo dnf install -y git
+
+# 2. Instalar Docker (Repositorio Oficial)
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# 3. Iniciar Docker
+sudo systemctl enable --now docker
+```
+
+### **Común: Configurar permisos**
+```bash
+# Dar permisos al usuario (requiere reiniciar sesión)
 sudo usermod -aG docker $USER
 ```
 
