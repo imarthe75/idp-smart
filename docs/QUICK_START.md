@@ -82,7 +82,7 @@ Edita el archivo `.env` (`nano .env`) y elige uno de los 3 estilos de procesamie
 #### **Opción C: Inferencia Local (VLLM On-Premise)**
 *Solo si tienes una GPU NVIDIA L40S o similar en tu red local.*
 1. Coloca `LLM_PROVIDER=vllm`
-2. Pega la IP de tu servidor local en `LOCAL_API_URL=http://10.4.3.23:8000`
+2. Pega la IP de tu servidor local en `LOCAL_API_URL=http://localhost:8000` o la IP correspondiente.
 
 ---
 

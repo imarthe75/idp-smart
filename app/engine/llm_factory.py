@@ -60,7 +60,7 @@ class VLLMProvider(BaseLLM):
       - RunPod Pods con la imagen vllm/vllm-openai
 
     Variables:
-      LOCAL_API_URL   → URL base (ej: http://10.4.3.23:8000)
+      LOCAL_API_URL   → URL base (ej: http://localhost:8000)
       LOCAL_LLM_MODEL → Nombre del modelo cargado
       LOCAL_LLM_TIMEOUT → Timeout en segundos (default: 300)
 
