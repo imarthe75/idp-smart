@@ -20,7 +20,7 @@
    - Roadmap GPU/RunPod
    - Troubleshooting
 
-### 3. **DOCLING_QUICK_START.md** ⚡ OPERACIONAL
+### 3. **QUICK_START.md** ⚡ OPERACIONAL
    - Guía 5 minutos (paso a paso)
    - Verificación de instalación
    - Medición de performance
@@ -66,7 +66,7 @@ Los siguientes archivos han sido consolidados en la documentación activa arriba
 
 2. **LOCAL_EXECUTION_GUIDE.md**
    - ❌ ELIMINAR
-   - ✅ Consolidado en: DOCLING_QUICK_START.md
+   - ✅ Consolidado en: QUICK_START.md
 
 3. **MIGRATION_GUIDE.md**
    - ❌ ELIMINAR
@@ -94,7 +94,7 @@ Los siguientes archivos han sido consolidados en la documentación activa arriba
 
 9. **QUICK_START.md**
    - ❌ ELIMINAR
-   - ✅ Consolidado en: DOCLING_QUICK_START.md
+   - ✅ Consolidado en: QUICK_START.md
 
 10. **IMPLEMENTATION_SUMMARY.md**
     - ❌ ELIMINAR
@@ -109,7 +109,7 @@ idp-smart/
 ├── README.md                          # PRINCIPAL - Empezar aquí
 ├── CHANGELOG.md                       # Histórico de cambios
 │
-├── DOCLING_QUICK_START.md            # ⚡ Instalación 5 min
+├── QUICK_START.md            # ⚡ Instalación 5 min
 ├── OPTIMIZATION_DOCLING.md           # 📊 Detalles OCR
 ├── ENSEMBLE_GRANITE_QWEN.md          # 🎯 Estrategia LLM
 ├── .env.docling.examples             # ⚙️  7 Config scenarios
@@ -136,9 +136,9 @@ idp-smart/
 
 ### Para Usuarios Nuevos
 1. Leer: **README.md** (visión general)
-2. Ejecutar: **DOCLING_QUICK_START.md** (pasos 1-6)
+2. Ejecutar: **QUICK_START.md** (pasos 1-6)
 3. Probar: Procesar un documento PDF
-4. Si problemas → Ver DOCLING_QUICK_START.md sección Troubleshooting
+4. Si problemas → Ver QUICK_START.md sección Troubleshooting
 
 ### Para Ingenieros/DevOps
 1. Leer: **README.md** (arquitectura)
@@ -150,7 +150,7 @@ idp-smart/
 1. Seleccionar scenario en **.env.docling.examples**
 2. Configurar según **OPTIMIZATION_DOCLING.md**
 3. Activar Ensemble si necesario: **ENSEMBLE_GRANITE_QWEN.md**
-4. Monitorear: Ver logs en DOCLING_QUICK_START.md
+4. Monitorear: Ver logs en QUICK_START.md
 
 ### Para Actualizaciones Futuras
 1. GPU disponible → Actualizar `VISION_DEVICE=cuda` (README.md)
@@ -166,7 +166,7 @@ Usuario abre proyecto
     ↓
 Lee README.md → Entiende qué es y cómo funciona
     ↓
-Ejecuta DOCLING_QUICK_START.md → Instala en 5 min
+Ejecuta QUICK_START.md → Instala en 5 min
     ↓
 ¿Necesita optimizar?
     ├─ Sí → Lee OPTIMIZATION_DOCLING.md
@@ -182,7 +182,7 @@ Ejecuta DOCLING_QUICK_START.md → Instala en 5 min
     └─ CPU → .env.docling.examples Scenario 1 (actual)
     ↓
 ¿Algo no funciona?
-    └─ DOCLING_QUICK_START.md → Troubleshooting
+    └─ QUICK_START.md → Troubleshooting
 ```
 
 ---
@@ -194,8 +194,8 @@ Ejecuta DOCLING_QUICK_START.md → Instala en 5 min
 | Situación | Documento |
 |-----------|-----------|
 | Acabo de llegar | README.md |
-| Quiero instalar rápido | DOCLING_QUICK_START.md |
-| Tengo error | DOCLING_QUICK_START.md Troubleshooting |
+| Quiero instalar rápido | QUICK_START.md |
+| Tengo error | QUICK_START.md Troubleshooting |
 | OCR demasiado lento | OPTIMIZATION_DOCLING.md |
 | Quiero GPU | OPTIMIZATION_DOCLING.md + .env.docling.examples Scenario 3 |
 | Quiero RunPod | OPTIMIZATION_DOCLING.md + .env.docling.examples Scenario 2 o 4 |
@@ -219,7 +219,7 @@ Ejecuta DOCLING_QUICK_START.md → Instala en 5 min
 
 ### Ahora Mismo
 1. ✅ README.md está actualizado
-2. ✅ DOCLING_QUICK_START.md listo
+2. ✅ QUICK_START.md listo
 3. ✅ OPTIMIZATION_DOCLING.md completo
 4. ✅ .env.docling.examples con 7 scenarios
 5. ✅ ENSEMBLE_GRANITE_QWEN.md disponible

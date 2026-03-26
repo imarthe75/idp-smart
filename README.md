@@ -197,7 +197,7 @@ docker logs idp_worker -f
 
 ## 📖 Referencias de Arquitectura Adicionales
 - **[Ajuste de Hardware AI](MIGRATION_GUIDE.md)**: Cómo configurar instancias NVIDIA vLLM de 32 a 80 GB.
-- **[Esquemas JSON Activos](docs/DOCLING_QUICK_START.md)**: Reglas de minificación sobre Catálogos Registrales.
+- **[Esquemas JSON Activos](docs/QUICK_START.md)**: Reglas de minificación sobre Catálogos Registrales.
 
 ---
 
