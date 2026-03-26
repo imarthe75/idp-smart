@@ -43,15 +43,10 @@
    - Configuración de Pods para Qwen2-VL y Granite
    - Integración con el Smart Router
 
-### 8. **.env.docling.examples** ⚙️ CONFIGURACIÓN
-   - 7 escenarios completos:
-     1. CPU Local (Ahora)
-     2. Hybridigo CPU + RunPod
-     3. GPU NVIDIA Local
-     4. RunPod GPU Pod 24/7
-     5. Testing - Alta Calidad
-     6. Testing - Alta Velocidad
-     7. Producción - Balanceada
+### 8. **.env.example** ⚙️ CONFIGURACIÓN
+   - Template oficial para despliegues limpios
+   - Contiene la configuración para el router híbrido (Celery, VLLM, Gemini, Motores Locales)
+   - Parámetros de detección de OOM y limitación de hilos
 
 ### 9. **CHANGELOG.md** 📝 HISTÓRICO
    - Cambios v1.0 → v2.0 → v3.0
@@ -79,7 +74,7 @@ Los siguientes archivos han sido consolidados en la documentación activa arriba
 
 4. **RUNPOD_INTEGRATION.md**
    - ❌ ELIMINAR
-   - ✅ Consolidado en: OPTIMIZATION_DOCLING.md + .env.docling.examples
+   - ✅ Consolidado en: OPTIMIZATION_DOCLING.md + .env.example
 
 5. **DOCUMENTACION_COMPLETA_ARQUITECTURA.md**
    - ❌ ELIMINAR
@@ -91,10 +86,10 @@ Los siguientes archivos han sido consolidados en la documentación activa arriba
 
 7. **.env.example**
    - ❌ ELIMINAR
-   - ✅ Consolidado en: .env.docling.examples (7 scenarios)
+   - ✅ Consolidado en: .env.example
 
 8. **.env.ensemble.examples**
-   - ❌ CONSIDERAR ELIMINAR (redundante con .env.docling.examples)
+   - ❌ CONSIDERAR ELIMINAR (redundante con .env.example
    - O mantener como referencia histórica
 
 9. **QUICK_START.md**
@@ -117,7 +112,7 @@ idp-smart/
 ├── QUICK_START.md            # ⚡ Instalación 5 min
 ├── OPTIMIZATION_DOCLING.md           # 📊 Detalles OCR
 ├── ENSEMBLE_GRANITE_QWEN.md          # 🎯 Estrategia LLM
-├── .env.docling.examples             # ⚙️  7 Config scenarios
+├── .env.example
 │
 ├── FORM_SCHEMA_GUIDE.md              # Guía de esquemas JSON
 │
@@ -147,11 +142,11 @@ idp-smart/
 ### Para Ingenieros/DevOps
 1. Leer: **README.md** (arquitectura)
 2. Explorar: **OPTIMIZATION_DOCLING.md** (detalles técnicos)
-3. Configurar: **.env.docling.examples** (elegir scenario)
+3. Configurar: **.env.example
 4. Referencia: **CHANGELOG.md** (cambios recientes)
 
 ### Para Producción
-1. Seleccionar scenario en **.env.docling.examples**
+1. Seleccionar scenario en **.env.example
 2. Configurar según **OPTIMIZATION_DOCLING.md**
 3. Activar Ensemble si necesario: **ENSEMBLE_GRANITE_QWEN.md**
 4. Monitorear: Ver logs en QUICK_START.md
@@ -181,9 +176,9 @@ Ejecuta QUICK_START.md → Instala en 5 min
     └─ No → Granite solo está bien
     ↓
 ¿Necesita GPU o RunPod?
-    ├─ GPU → .env.docling.examples Scenario 3
-    ├─ RunPod → .env.docling.examples Scenario 2 o 4
-    └─ CPU → .env.docling.examples Scenario 1 (actual)
+    ├─ GPU → .env.example
+    ├─ RunPod → .env.example
+    └─ CPU → .env.example
     ↓
 ¿Algo no funciona?
     └─ QUICK_START.md → Troubleshooting
@@ -201,8 +196,8 @@ Ejecuta QUICK_START.md → Instala en 5 min
 | Quiero instalar rápido | QUICK_START.md |
 | Tengo error | QUICK_START.md Troubleshooting |
 | OCR demasiado lento | OPTIMIZATION_DOCLING.md |
-| Quiero GPU | OPTIMIZATION_DOCLING.md + .env.docling.examples Scenario 3 |
-| Quiero RunPod | OPTIMIZATION_DOCLING.md + .env.docling.examples Scenario 2 o 4 |
+| Quiero GPU | OPTIMIZATION_DOCLING.md + .env.example
+| Quiero RunPod | OPTIMIZATION_DOCLING.md + .env.example
 | Necesito máxima precisión | ENSEMBLE_GRANITE_QWEN.md |
 | ¿Qué cambió? | CHANGELOG.md |
 | Entiendo JSON schemas | FORM_SCHEMA_GUIDE.md |
@@ -225,7 +220,7 @@ Ejecuta QUICK_START.md → Instala en 5 min
 1. ✅ README.md está actualizado
 2. ✅ QUICK_START.md listo
 3. ✅ OPTIMIZATION_DOCLING.md completo
-4. ✅ .env.docling.examples con 7 scenarios
+4. ✅ .env.example
 5. ✅ ENSEMBLE_GRANITE_QWEN.md disponible
 
 ### Próximas 24 Horas

@@ -24,15 +24,11 @@ cd idp-smart
 
 ## ⚙️ Paso 2: Configurar las Variables de Entorno
 
-El proyecto incluye múltiples escenarios de configuración pre-construidos en la carpeta raíz. Para un servidor nuevo, debes inicializar tu archivo maestro `.env`.
+El proyecto incluye un archivo maestro de ejemplo en la raíz. Para un servidor nuevo, debes inicializar tu archivo `.env`.
 
 ```bash
-# Copia uno de los escenarios preparados como tu archivo .env
-# Ejemplo: Para entorno Híbrido (Procesamiento Dual: CPU Local + RunPod para LLM)
-cp .env.docling.examples.scenario2 .env
-
-# (Opcional) O si correrás todo estrictamente local en CPU:
-# cp .env.docling.examples.scenario1 .env
+# Copia el archivo de ejemplo a su versión definitiva
+cp .env.example .env
 ```
 
 **Variables Críticas a modificar**
