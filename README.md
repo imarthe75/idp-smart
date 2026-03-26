@@ -36,7 +36,7 @@ Para entender cómo se orquesta una extracción masiva de información a través
 graph LR
     subgraph Capas [Capas de Aplicación]
         API[FastAPI REST:8000]
-        Worker[Celery Worker]
+        Worker[Celery Worker + LangChain]
         UI[Frontend UI:5173]
     end
 
@@ -57,9 +57,9 @@ graph LR
     S3 -->|Trigger Webhook| Worker
     Worker -->|Gestión de Colas| Redis
     Redis -->|Despacha| Worker
-    Worker -->|Manda Imágenes| AI_Vision
-    Worker -->|Manda Contexto| Docling
-    Worker -->|Inyecta Fusión Legal| AI_Logic
+    Worker -->|Orquestación| AI_Vision
+    Worker -->|Orquestación| Docling
+    Worker -->|Fusión Semántica| AI_Logic
     Worker -->|Upsert Merge| DB
     API -->|Lectura Histórica| DB
 ```
@@ -77,7 +77,7 @@ graph TD
         Merger -->|Captura Sellos/Firmas| AI_Vis[Qwen2-VL-7B-Instruct]
         Merger -->|Captura Markdown| MD_Buffer[Texto Estructurado]
         
-        AI_Vis --> Agent[2. Stage: Reasoning Prompt]
+        AI_Vis --> Agent[2. Stage: Orquestación LangChain]
         MD_Buffer --> Agent
         
         Agent -->|Pydantic Constraint| AI_Reas[Granite 3.0 / Gemini]
@@ -124,7 +124,7 @@ Mediante técnicas de JSONB en PostgreSQL, al subir múltiples PDFs para un solo
 ### 📊 Comparativa Técnica
 | Característica | Método Clásico RAG + Chunks | Método idp-smart |
 |---|---|---|
-| **Preparación** | Meses etiquetando datos ciegos | Cero días. Modelos multi-billonarios |
+| **Preparación** | Meses etiquetando datos ciegos | Despliegue inmediato. Basado en modelos fundacionales (LLMs) pre-entrenados |
 | **Escalabilidad** | Re-entrenar por cada tipo de forma | Sumar JSON de negocio al catálogo |
 | **Contexto** | Se fragmenta (peligro legal) | Documento Íntegro (Zero fragmentación) |
 | **Adendas** | Complejo (forzar re-indexación vectorial) | Nativo (suma paramétrica al contexto JSONB) |
@@ -190,7 +190,8 @@ docker logs idp_worker -f
 | **Pipeline NLP-Visión Integrado** | ✅ Prod | OCR Docling + Qwen2-VL Visión en tándem |
 | **Reactive MinIO Webhooks** | ✅ Prod | Ingesta auto-accionada por capa de red |
 | **Native UUID v7 / OOM Catcher** | ✅ Prod | Bases resueltas para altísima concurrencia |
-| **RAG (Legal Intelligence)** | ⏳ Dev | Búsqueda semántica (Chromadb/Qdrant) contra jurisprudencia local |
+| **RAG (Legal Intelligence)** | ⏳ Dev | Motor de búsqueda semántica (ChromaDB/Qdrant) para interrogación de expedientes históricos y cruce con jurisprudencia local. Permite auditorías transversales y consultas en lenguaje natural sobre todo el repositorio, facilitando la toma de decisiones estratégicas basadas en precedentes. |
+| **Human-in-the-loop & Self-Tuning** | 📅 Pln | Interfaz de validación humana para extracciones de baja confianza. Incluye un bucle de retroalimentación donde el prompt se auto-ajusta dinámicamente según las correcciones humanas para maximizar la precisión futura. |
 | **Telemetry & Observability** | ⏳ Pln | Monitor de salud Prometheus/Grafana |
 
 ---
