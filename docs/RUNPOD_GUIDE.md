@@ -60,43 +60,31 @@ Para el **Proyecto Tolucón**, es **OBLIGATORIO** cargar ambos modelos simultán
    ```
 
 > [!IMPORTANT]
-> El parámetro `--gpu-memory-utilization 0.45` es crítico. Permite que ambos modelos coexistan en la misma GPU de 48GB sin pelear por la memoria. No lo omitas.
+> **¿Por qué 0.45?** Una GPU L40S tiene 48GB. Sin este flag, el primer proceso intentará acaparar el 90% (~43GB), dejando al segundo proceso sin memoria. Al usar `0.45`, cada modelo reserva aprox. 21.6GB, permitiendo que ambos coexistan en la misma GPU de 48GB (total ~43.2GB + margen para sistema).
 
 5. **Configuración de Red (Expose Ports):**
-   Asegúrate de que en RunPod el Pod tenga expuestos los puertos **8000** y **8001** en la configuración de `HTTP Service`.
+   RunPod permite exponer múltiples puertos mediante su sistema de Proxy Inverso inteligente. Para que `idp-smart` funcione, debes:
+   - Configurar en la sección **Expose HTTP Port** (o Network Settings) del Pod los puertos **8000** y **8001**.
+   - RunPod generará dos URLs basadas en el puerto:
+     - `https://[POD_ID]-8000.proxy.runpod.net` (Granite)
+     - `https://[POD_ID]-8001.proxy.runpod.net` (Qwen2-VL)
 
 ---
 
-## 4. Configurar el Aplicativo `idp-smart` (Smart Router)
+## 4. Configurar el Aplicativo `idp-smart` (URLs de Inferencia)
 
-Una vez que tu Pod de RunPod está inicializado ("Running") en la plataforma:
-
-1. Ve al menú **Connect** en tu Pod y obtén el **API ID** al final de la URL, por ejemplo (`https://abcdefg...-8000.proxy.runpod.net/`).
-2. Ve al panel de RunPod **[Settings]** > **API Keys** y obtén tu *Access Token*.
-
-Con estos datos en mano, edita el archivo `.env` de tu clúster **idp-smart**:
+Una vez que tu Pod esté en estado **"Running"**, obtén el **API ID** de la sección "Connect" y actualiza tu archivo `.env`:
 
 ```properties
 # =============================================================================
-# [4] RUNPOD — GESTIÓN DE CICLO DE VIDA (Power Control)
+# [1] ENDPOINTS DE INFERENCIA (RunPod Proxy)
 # =============================================================================
-# Habilitar integración de RunPod auto-scaling / idle detection
-RUNPOD_ENABLED=true
-RUNPOD_API_KEY=tu_runpod_api_key_aqui
-
-# ID Alfanumérico del Pod (visible en la sección "Connect" de RunPod)
-RUNPOD_POD_LLM_ID=q032hxc9...
-
-# Desconexión por inactividad. El agente idp-smart pausará el Pod tras 300 segundos de inactividad
-RUNPOD_IDLE_TIMEOUT=300
+# Incluir el sufijo /v1 al final de la URL del proxy
+RUNPOD_LLM_URL=https://[TU_POD_ID]-8000.proxy.runpod.net/v1
+RUNPOD_VISION_URL=https://[TU_POD_ID]-8001.proxy.runpod.net/v1
 ```
 
-Igualmente, configura el proveedor a RunPod en la Fase Activa:
-```properties
-LLM_PROVIDER=runpod
-```
-
-### Funciones del Agent Runpod Manager (`runpod_manager.py`)
+## 5. Gestión de Ciclo de Vida (Auto-Scaling)
 Al activar `RUNPOD_ENABLED=true`, el Worker de *Project Tolucón* hará lo siguiente de manera autónoma:
 1. **Despertar el Pod:** Si llega un documento nuevo y la máquina de RunPod está en reposo (Exited), el Worker llamará a la API GraphQL de RunPod para levantar el Pod.
 2. **Ping Continuo:** Mientras el procesamiento de documentos se ejecuta, validará que el Pod mantenga la señal de vida (`touch`).
