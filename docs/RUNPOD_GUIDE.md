@@ -40,10 +40,21 @@ Al enlazar el volumen a este path, `vLLM` y `Docling` guardarán (y buscarán) l
 
 ---
 
+## 0. Configuración de API Key (Acceso Programático)
+Para que el orquestador `idp-smart` pueda encender/apagar Pods y enviar tareas, requiere tu API Key secreta.
+
+1.  Inicia sesión en **RunPod**.
+2.  Ve a **[Settings > API Keys]**.
+3.  Haz clic en **Generate Key**.
+4.  > [!IMPORTANT]
+    > **Copia la API Key inmediatamente.** Por motivos de seguridad, RunPod **no te permitirá volver a verla** una vez que cierres la ventana. Si la pierdes, deberás generar una nueva.
+
+---
+
 ## 3. Configuración y Despliegue de los Pods
 
-### 3.1. Pod de Inferencia Multimodal Dual (Granite + Qwen2-VL)
-Para el **Proyecto Tolucón**, es **OBLIGATORIO** cargar ambos modelos simultáneamente para permitir la orquestación de Visión + Razonamiento Legal.
+### 3.1. Pod Principal de Inferencia (Granite + Qwen2-VL)
+Este se considera el **Pod Principal**. Es el encargado de alojar los modelos pesados (Hugging Face) y debe estar vinculado al "Network Volume" creado en el paso 2.
 
 1. Ve a la pestaña **[Pods]** y da clic en **Deploy**.
 2. **Selección de GPU:** Selecciona una **NVIDIA L40S (48GB)**. Es la única que garantiza estabilidad para ambos modelos.
