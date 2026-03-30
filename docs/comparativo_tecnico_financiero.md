@@ -64,4 +64,22 @@ Este documento presenta un análisis exhaustivo de costos y rendimiento para tod
 | **Cloud Puro (AWS/Google)** | 45 segundos | ~7.8 días (24/7) |
 
 ---
+
+## 6. Comparativa de Costos Totales de Operación (TCO)
+*Proyección mensual para 15,000 expedientes (750,000 páginas) incluyendo Hardware + OCR + LLM.*
+
+| Escenario de Despliegue | OCR (Procesamiento) | LLM (Razonamiento) | Hardware (OPEX/Nube) | **Costo Total Mensual** | **Costo por Expediente** |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. 100% On-Premise** | $0.00 (Docling) | $0.00 (Granite 3.0) | $300.00 (Servidor Propio) | **$300.00 USD** | $0.020 USD |
+| **2. Híbrido (Local + Gemini)** | $0.00 (Docling) | $13.50 (Flash Lite) | $300.00 (Servidor Propio) | **$313.50 USD** | $0.021 USD |
+| **3. Acelerado (RunPod + Gemini)** | $150.00 (GPU L40S) | $13.50 (Flash Lite) | $300.00 (Servidor Propio) | **$463.50 USD** | $0.031 USD |
+| **4. Cloud Económico (AWS + Gemini)** | $11,250.00 (AWS) | $13.50 (Flash Lite) | $100.00 (Orquestador) | **$11,363.50 USD** | $0.758 USD |
+| **5. Enterprise Cloud (AWS + GPT-4o)**| $11,250.00 (AWS) | $487.50 (GPT-4o) | $100.00 (Orquestador) | **$11,837.50 USD** | $0.789 USD |
+
+---
+
+## 7. Análisis de Retorno de Inversión (ROI)
+El despliegue de la **Arquitectura Híbrida v2.0** propuesta (Escenario 2 o 3) representa un **ahorro superior al 95%** en comparación con soluciones puras de nube empresarial (AWS/Azure/Google AI), manteniendo la soberanía de los datos legales y reduciendo el tiempo de procesamiento de 21 días a solo 4 días para los 15,000 expedientes iniciales.
+
+---
 *Nota: Los costos y tiempos son estimaciones basadas en los precios de lista a Marzo de 2026 y pruebas de rendimiento preliminares.*
