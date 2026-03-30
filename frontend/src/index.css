@@ -365,12 +365,17 @@ body {
 .search-input-wrapper { position: relative; display: flex; align-items: center; }
 .act-select.search-mode { cursor: text; padding-right: 2.5rem; }
 .clear-search {
-  position: absolute; right: 0.75rem; background: #e2e8f0; border: none;
+  position: absolute; right: 2rem; background: #e2e8f0; border: none;
   width: 20px; height: 20px; border-radius: 50%; display: flex;
   align-items: center; justify-content: center; font-size: 0.65rem;
   color: #475569; cursor: pointer; transition: background 0.15s;
 }
 .clear-search:hover { background: #cbd5e1; }
+
+.dropdown-arrow {
+  position: absolute; right: 0.8rem; font-size: 0.6rem; color: var(--muted);
+  pointer-events: none; opacity: 0.6;
+}
 
 .options-dropdown {
   position: absolute; top: 100%; left: 0; right: 0; z-index: 200;

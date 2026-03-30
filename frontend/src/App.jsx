@@ -453,7 +453,8 @@ export default function App() {
     const s = actSearch.toLowerCase()
     return actTypes.filter(act => 
       act.display_label.toLowerCase().includes(s) ||
-      act.form_code.toLowerCase().includes(s)
+      act.dsactocorta.toLowerCase().includes(s) ||
+      String(act.form_code).toLowerCase().includes(s)
     )
   }, [actTypes, actSearch])
 
@@ -656,22 +657,24 @@ export default function App() {
                   <div className="error-pill">⚠ {actError}</div>
                 ) : (
                   <div className="searchable-select-container" ref={dropdownRef}>
-                    <div className="search-input-wrapper">
-                      <input
-                        type="text"
-                        placeholder="🔍 Buscar acto (ej. BI34, Compraventa...)"
-                        value={actSearch}
-                        onChange={(e) => {
-                          setActSearch(e.target.value)
-                          setShowOptions(true)
-                        }}
-                        onFocus={() => setShowOptions(true)}
-                        className="act-select search-mode"
-                      />
-                      {actSearch && (
-                        <button className="clear-search" onClick={() => { setActSearch(''); setShowOptions(true); }}>✕</button>
-                      )}
-                    </div>
+                      <div className="search-input-wrapper" onClick={() => setShowOptions(!showOptions)}>
+                        <input
+                          type="text"
+                          placeholder="🔍 Buscar acto (ej. BI34, Compraventa...)"
+                          value={actSearch}
+                          onChange={(e) => {
+                            setActSearch(e.target.value)
+                            setShowOptions(true)
+                          }}
+                          onFocus={() => setShowOptions(true)}
+                          className="act-select search-mode"
+                          style={{cursor: 'pointer'}} // se siente como un select
+                        />
+                        <div className="dropdown-arrow">▼</div>
+                        {actSearch && (
+                          <button className="clear-search" onClick={(e) => { e.stopPropagation(); setActSearch(''); setShowOptions(true); }}>✕</button>
+                        )}
+                      </div>
                     
                     {showOptions && (
                       <div className="options-dropdown">
@@ -687,7 +690,7 @@ export default function App() {
                               }}
                             >
                               <div className="option-content">
-                                <span className="option-code-pill">{act.form_code}</span>
+                                <span className="option-code-pill">{act.dsactocorta}</span>
                                 <span className="option-text">{act.dsacto}</span>
                               </div>
                             </div>
