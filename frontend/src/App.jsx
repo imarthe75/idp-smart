@@ -71,11 +71,18 @@ function TaskCard({ task, onDismiss }) {
               </span>
             )}
           </div>
-          {progress?.llm_provider && (
-            <span className="provider-badge">
-              <span className="provider-icon">🤖</span> {progress.llm_provider.toUpperCase()}
-            </span>
-          )}
+          <div className="task-engine-info">
+            {progress?.llm_provider && (
+              <span className="provider-badge">
+                <span className="provider-icon">🤖</span> {progress.llm_provider.toUpperCase()}
+              </span>
+            )}
+            {progress?.gpu_model && (
+              <span className="gpu-badge" title="Hardware utilizado">
+                <span className="gpu-icon">⚡</span> {progress.gpu_model}
+              </span>
+            )}
+          </div>
         </div>
         <div className="task-times">
           {progress?.is_waiting && !finished && (
@@ -319,7 +326,12 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
                   </span>
                 </td>
                 <td>{ex.created_at ? ex.created_at.split('.')[0] : '—'}</td>
-                <td><span className={`engine-chip ${ex.llm_provider}`}>{ex.llm_provider || '—'}</span></td>
+                <td>
+                  <div className="engine-cell">
+                    <span className={`engine-chip ${ex.llm_provider}`}>{ex.llm_provider || '—'}</span>
+                    {ex.gpu_model && <span className="gpu-subtext">{ex.gpu_model}</span>}
+                  </div>
+                </td>
                 <td><span className="time-metric">{ex.page_count || '—'}</span></td>
                 <td><span className="time-metric">{ex.docling_duration_s ? `${ex.docling_duration_s}s` : '—'}</span></td>
                 <td><span className="time-metric">{ex.ai_duration_s ? `${ex.ai_duration_s}s` : '—'}</span></td>

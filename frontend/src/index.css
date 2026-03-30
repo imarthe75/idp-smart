@@ -404,3 +404,23 @@ body {
 .option-text { font-size: 0.88rem; font-weight: 500; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .current-selection-label { font-weight: 700; color: var(--primary); font-size: 0.7rem; text-transform: uppercase; margin-right: 4px; }
+
+/* Engine & GPU Badges */
+.task-engine-info { display: flex; gap: 8px; margin-top: 4px; }
+.provider-badge, .gpu-badge {
+  font-size: 0.65rem; font-weight: 700; color: #475569;
+  background: #f1f5f9; border: 1px solid #e2e8f0;
+  padding: 2px 6px; border-radius: 4px; display: flex; align-items: center; gap: 4px;
+}
+.gpu-badge { color: #d97706; background: #fffbeb; border-color: #fef3c7; }
+
+.engine-cell { display: flex; flex-direction: column; gap: 2px; }
+.gpu-subtext { font-size: 0.6rem; color: var(--muted); font-weight: 400; line-height: 1; }
+.engine-chip {
+  padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700;
+  text-transform: uppercase; display: inline-block; width: fit-content;
+}
+.engine-chip.openai { background: #10a37f; color: white; }
+.engine-chip.google { background: #4285f4; color: white; }
+.engine-chip.runpod { background: #6b21a8; color: white; }
+.engine-chip.local { background: #475569; color: white; }

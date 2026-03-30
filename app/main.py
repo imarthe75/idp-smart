@@ -319,6 +319,8 @@ async def get_status(task_id: str, db: AsyncSession = Depends(get_db)):
         "form_code":            row_dict["form_code"],
         "pdf_path":             row_dict["pdf_minio_path"],
         "markdown_minio_path":  row_dict.get("markdown_minio_path"),
+        "llm_provider":         row_dict.get("llm_provider"),
+        "gpu_model":            row_dict.get("gpu_model"),
         "created_at":           str(row_dict.get("created_at", "")),
         "updated_at":           str(row_dict.get("updated_at", "")),
         "extracted_data":       row_dict["extracted_data"],
@@ -366,7 +368,7 @@ async def list_extractions(limit: int = 100, db: AsyncSession = Depends(get_db))
     query = text("""
         SELECT task_id, expediente_id, status, stage_current, act_type, form_code, pdf_minio_path, 
                markdown_minio_path, created_at, updated_at, error_message,
-               docling_duration_s, ai_duration_s, total_duration_s, llm_provider, page_count
+               docling_duration_s, ai_duration_s, total_duration_s, llm_provider, gpu_model, page_count
         FROM idp_smart.document_extractions
         ORDER BY created_at DESC
         LIMIT :limit
