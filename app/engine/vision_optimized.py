@@ -29,8 +29,8 @@ _global_lock = threading.Lock()
 class DoclingVisionOptimized:
     def __init__(self):
         """
-        Inicia el motor Docling con soporte para saneamiento de memoria y ARQUITECTURA ULTRA-FAST.
-        Optimizado para servidores de 48 núcleos con 48GB RAM.
+        Inicia el motor Docling con soporte para saneamiento de memoria y ARQUITECTURA AUTOADAPTABLE.
+        Optimización dinámica de recursos según la clase HardwareProfile.
         """
         self.minio_client = None
         from engine.hardware_detector import detect_hardware
@@ -159,11 +159,10 @@ class DoclingVisionOptimized:
             reader = PdfReader(local_path)
             total_pages = len(reader.pages)
             
-            # ESTRATEGIA BALANCEADA: Ajustada para 6 núcleos y 6GB RAM
-            # Aumentamos chunk a 10 para reducir fragmentación
+            # ESTRATEGIA BALANCEADA: Autoadaptable según núcleos y RAM
+            # Chunking para no saturar memoria en archivos de 1,000+ páginas
             chunk_size = max(10, self.profile.pdf_chunk_size)
-            # En CPU con 6 cores, 1 batch grande suele ser mejor que 2 pequeños que re-re-procesan
-            max_parallel_batches = 1 if self.profile.cpu_cores <= 8 else 2
+            max_parallel_batches = self.profile.max_parallel_batches
             
             strategy = f"Fast-{chunk_size}x{max_parallel_batches}"
             logger.info(f"🚀 [ESTRATEGIA] {strategy} | Doc: {object_name} | Págs: {total_pages}")

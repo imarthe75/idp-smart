@@ -31,6 +31,7 @@ class HardwareProfile:
     omp_threads: int           # núcleos para OpenMP (docling/numpy)
     mkl_threads: int           # núcleos para MKL (intel math)
     pdf_chunk_size: int        # páginas por chunk en modo CPU
+    max_parallel_batches: int  # Lotes concurrentes en ThreadPoolExecutor
     processing_unit: str       # etiqueta para hardware_benchmarks
 
 
@@ -94,6 +95,7 @@ def detect_hardware() -> HardwareProfile:
         omp_threads = min(cpu_cores, 8)
         mkl_threads = min(cpu_cores, 8)
         pdf_chunk_size = 999  # Sin chunking en GPU (memoria suficiente)
+        max_parallel_batches = 1 # En GPU procesamos linealmente o gestionamos VRAM
     else:
         docling_device = "cpu"
         processing_unit = "CPU"
@@ -116,9 +118,14 @@ def detect_hardware() -> HardwareProfile:
             # Estimación por CPU (base 6, +1 cada 2 núcleos extra)
             ideal_chunks_by_cpu = max(6, min(30, 6 + (cpu_cores - 8) // 2))
             
-            # El chunk final respeta el límite de RAM
-            pdf_chunk_size = min(ideal_chunks_by_cpu, max_chunks_by_ram)
-            logger.info("⚙️ [AUTO-TUNE] pdf_chunk_size calculado: %d (RAM limit: %d)", pdf_chunk_size, max_chunks_by_ram)
+        # El chunk final respeta el límite de RAM
+        pdf_chunk_size = min(ideal_chunks_by_cpu, max_chunks_by_ram)
+        
+        # --- Cálculo de Lotes Paralelos (Celery ThreadPool) ---
+        # 1 batch cada 8 núcleos, con tope de 6 para no saturar bus RAM
+        max_parallel_batches = max(1, min(6, cpu_cores // 8)) 
+        
+        logger.info("⚙️ [AUTO-TUNE] pdf_chunk_size: %d | batches: %d", pdf_chunk_size, max_parallel_batches)
 
         # En modo masivo paralelo, forzamos 1 hilo interno para evitar sobre-saturación
         omp_threads = 1
@@ -134,6 +141,7 @@ def detect_hardware() -> HardwareProfile:
         omp_threads=omp_threads,
         mkl_threads=mkl_threads,
         pdf_chunk_size=pdf_chunk_size,
+        max_parallel_batches=max_parallel_batches if not has_gpu else 1,
         processing_unit=processing_unit,
     )
 
