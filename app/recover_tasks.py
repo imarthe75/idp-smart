@@ -11,7 +11,7 @@ DB_USER = "admin_user"
 DB_PASSWORD = "Ad54=Tx91.Vm+23_Qr78"
 DB_HOST = "db"
 DB_PORT = "5432"
-DB_NAME = "rpp_qa"
+DB_NAME = "rpp"
 
 DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 

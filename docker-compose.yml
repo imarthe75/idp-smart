@@ -31,7 +31,7 @@ services:
     environment:
       - POSTGRES_USER=admin_user
       - POSTGRES_PASSWORD=Ad54=Tx91.Vm+23_Qr78
-      - POSTGRES_DB=rpp_qa
+      - POSTGRES_DB=rpp
     volumes:
       - ./db/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
       - postgres_data:/var/lib/postgresql

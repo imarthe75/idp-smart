@@ -81,8 +81,8 @@ fi
 
 # Test 7: Verificar PostgreSQL
 echo -e "${YELLOW}[7/8] Verificando PostgreSQL...${NC}"
-if docker exec idp_db psql -U admin_user -d rpp_qa -c "SELECT 1" &> /dev/null; then
-    CATALOG_COUNT=$(docker exec idp_db psql -U admin_user -d rpp_qa -t -c "SELECT COUNT(*) FROM idp_smart.act_forms_catalog;" 2>/dev/null)
+if docker exec idp_db psql -U admin_user -d rpp -c "SELECT 1" &> /dev/null; then
+    CATALOG_COUNT=$(docker exec idp_db psql -U admin_user -d rpp -t -c "SELECT COUNT(*) FROM idp_smart.act_forms_catalog;" 2>/dev/null)
     echo -e "${GREEN}✅ PostgreSQL OK${NC} - $CATALOG_COUNT formas en catálogo"
 else
     echo -e "${RED}❌ PostgreSQL NO responde${NC}"

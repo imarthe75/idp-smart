@@ -173,7 +173,7 @@ def minify_schema(schema):
 
 def convert_to_json_schema(schema_minified: dict) -> dict:
     """
-    Convierte el esquema minimizado de rpp_qa a un esquema JSON estándar 
+    Convierte el esquema minimizado de rpp a un esquema JSON estándar
     para forzar la gramática GBNF en LocalAI.
     """
     properties = {}

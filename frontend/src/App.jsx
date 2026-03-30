@@ -431,6 +431,31 @@ export default function App() {
   const [tasks, setTasks]           = useState([])
   const [reusingDoc, setReusingDoc] = useState(null) // { taskId, fileName }
   const [customExpediente, setCustomExpediente] = useState('')
+  const [actSearch, setActSearch] = useState('')
+  const [showOptions, setShowOptions] = useState(false)
+  const dropdownRef = useRef(null)
+
+  // Ocultar dropdown al hacer click fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowOptions(false)
+        if (selectedAct) setActSearch(selectedAct.display_label)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [selectedAct])
+
+  // Filtrado de actos
+  const filteredActs = useMemo(() => {
+    if (!actSearch) return actTypes
+    const s = actSearch.toLowerCase()
+    return actTypes.filter(act => 
+      act.display_label.toLowerCase().includes(s) ||
+      act.form_code.toLowerCase().includes(s)
+    )
+  }, [actTypes, actSearch])
 
   useEffect(() => {
     const handler = (e) => {
@@ -453,7 +478,10 @@ export default function App() {
     axios.get(`${API_BASE}/api/v1/forms`)
       .then(({ data }) => {
         setActTypes(data.acts || [])
-        if (data.acts?.length) setSelectedAct(data.acts[0])
+        if (data.acts?.length) {
+          setSelectedAct(data.acts[0])
+          setActSearch(data.acts[0].display_label)
+        }
       })
       .catch(() => setActError('No se pudo conectar con la API para obtener los tipos de acto.'))
       .finally(() => setLoadingActs(false))
@@ -627,23 +655,52 @@ export default function App() {
                 ) : actError ? (
                   <div className="error-pill">⚠ {actError}</div>
                 ) : (
-                  <div className="select-wrap">
-                    <select
-                      value={String(selectedAct?.form_code ?? '')}
-                      onChange={(e) => {
-                        const found = actTypes.find(a => String(a.form_code) === e.target.value)
-                        setSelectedAct(found ?? null)
-                      }}
-                      className="act-select"
-                    >
-                      {actTypes.map(act => (
-                        <option key={act.form_code} value={String(act.form_code)}>
-                          {act.display_label}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedAct && (
-                      <p className="act-sub">{selectedAct.dsactocorta} · {selectedAct.dsacto}</p>
+                  <div className="searchable-select-container" ref={dropdownRef}>
+                    <div className="search-input-wrapper">
+                      <input
+                        type="text"
+                        placeholder="🔍 Buscar acto (ej. BI34, Compraventa...)"
+                        value={actSearch}
+                        onChange={(e) => {
+                          setActSearch(e.target.value)
+                          setShowOptions(true)
+                        }}
+                        onFocus={() => setShowOptions(true)}
+                        className="act-select search-mode"
+                      />
+                      {actSearch && (
+                        <button className="clear-search" onClick={() => { setActSearch(''); setShowOptions(true); }}>✕</button>
+                      )}
+                    </div>
+                    
+                    {showOptions && (
+                      <div className="options-dropdown">
+                        {filteredActs.length > 0 ? (
+                          filteredActs.map(act => (
+                            <div
+                              key={act.form_code}
+                              className={`option-item ${selectedAct?.form_code === act.form_code ? 'selected' : ''}`}
+                              onClick={() => {
+                                setSelectedAct(act)
+                                setActSearch(act.display_label)
+                                setShowOptions(false)
+                              }}
+                            >
+                              <div className="option-content">
+                                <span className="option-code-pill">{act.form_code}</span>
+                                <span className="option-text">{act.dsacto}</span>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="option-item empty">No se encontraron actos</div>
+                        )}
+                      </div>
+                    )}
+                    {selectedAct && !showOptions && (
+                      <p className="act-sub">
+                        <span className="current-selection-label">Seleccionado:</span> {selectedAct.dsactocorta} · {selectedAct.dsacto}
+                      </p>
                     )}
                   </div>
                 )}

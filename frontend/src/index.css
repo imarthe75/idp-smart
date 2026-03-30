@@ -128,7 +128,7 @@ body {
 
 /* ── Tasks panel ─────────────────────────────────────────── */
 .tasks-panel { display: flex; flex-direction: column; gap: 1rem; }
-.tasks-panel-header { }
+.tasks-panel-header { margin-bottom: 0.5rem; }
 .tasks-title { font-size: 1.1rem; font-weight: 700; }
 .tasks-sub   { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
 .tasks-list  { display: flex; flex-direction: column; gap: .85rem; }
@@ -359,3 +359,43 @@ body {
   outline: 2px solid var(--primary);
   border-color: transparent;
 }
+
+/* ── Searchable Select Improved ──────────────────────────── */
+.searchable-select-container { position: relative; width: 100%; display: flex; flex-direction: column; gap: 0.5rem; }
+.search-input-wrapper { position: relative; display: flex; align-items: center; }
+.act-select.search-mode { cursor: text; padding-right: 2.5rem; }
+.clear-search {
+  position: absolute; right: 0.75rem; background: #e2e8f0; border: none;
+  width: 20px; height: 20px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; font-size: 0.65rem;
+  color: #475569; cursor: pointer; transition: background 0.15s;
+}
+.clear-search:hover { background: #cbd5e1; }
+
+.options-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 200;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; margin-top: 4px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+  max-height: 320px; overflow-y: auto; overflow-x: hidden;
+  animation: dropdownFade .15s ease-out;
+}
+@keyframes dropdownFade { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+.option-item {
+  padding: 0.75rem 1rem; cursor: pointer; transition: background 0.15s;
+  border-bottom: 1px solid #f8fafc;
+}
+.option-item:last-child { border-bottom: none; }
+.option-item:hover { background: #f1f5f9; }
+.option-item.selected { background: #eff6ff; }
+.option-item.empty { color: var(--muted); font-size: 0.85rem; text-align: center; padding: 2rem; cursor: default; }
+
+.option-content { display: flex; align-items: center; gap: 10px; }
+.option-code-pill {
+  background: #f1f5f9; color: #475569; border: 1px solid #e1e8f0;
+  font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+  font-family: monospace; min-width: 45px; text-align: center;
+}
+.option-text { font-size: 0.88rem; font-weight: 500; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.current-selection-label { font-weight: 700; color: var(--primary); font-size: 0.7rem; text-transform: uppercase; margin-right: 4px; }
