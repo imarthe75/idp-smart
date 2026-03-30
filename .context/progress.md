@@ -17,3 +17,4 @@
 - **Nodo Inferencia L40S**: Despliegue del segundo nodo con GPUs dedicadas.
 - **Detección de Entidades**: Refinamiento de prompts para distinguir roles complejos (Donante vs Donatario).
 - **Batch Processing**: Interfaz para carga masiva de los 15,000 expedientes.
+- **Dossier Model**: Conversión al modelo de Expedientes con Secciones.
