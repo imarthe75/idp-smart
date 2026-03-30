@@ -118,8 +118,13 @@ async def process_document(
     print(f"DEBUG: Generated task_id={task_id} type={type(task_id)}")
     minio_client = get_minio_client()
     
-    # 1. Guardar esquema JSON
-    json_content = await json_form.read()
+    # 1. Guardar esquema JSON (VALIDACIÓN PREVENTIVA)
+    try:
+        json_content = await json_form.read()
+        json.loads(json_content) # Validar que sea JSON válido
+    except Exception as e_json:
+        return {"error": f"El archivo 'json_form' no contiene un JSON válido: {str(e_json)}", "code": 400}
+        
     json_object_name = f"{task_id}/form.json"
     upload_file_to_minio(minio_client, json_object_name, json_content, "application/json")
     json_minio_path = f"idp-documents/{json_object_name}"

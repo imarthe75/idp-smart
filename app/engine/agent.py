@@ -301,6 +301,9 @@ Respuesta en JSON robusto:
         except: pass
 
     response = None
+    max_retries = 3
+    retry_count = 0
+    
     try:
         if redis_client:
             semaphore_name = f"sem:ai_concurrency:{settings.llm_provider}"
@@ -320,20 +323,35 @@ Respuesta en JSON robusto:
         import random
         time.sleep(random.uniform(0.1, 1.5))
 
-        if settings.llm_provider in ("gemini", "google") and image_paths:
-            print(f"[Multimodal] Enviando {len(image_paths)} imagen(es) a Gemini...")
-            content = [{"type": "text", "text": final_prompt}]
-            for img_path in image_paths:
-                if os.path.exists(img_path):
-                    with open(img_path, "rb") as f:
-                        img_data = base64.b64encode(f.read()).decode("utf-8")
-                        content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_data}"}})
-            response = llm.invoke([HumanMessage(content=content)])
-        else:
-            print(f"[Razonamiento] Enviando prompt ({settings.llm_provider})...")
-            prompt_tmpl = PromptTemplate.from_template(template)
-            chain = prompt_tmpl | llm
-            response = chain.invoke({"document_md": safe_markdown, "form_schema": schema_str, "visual_analysis": visual_analysis})
+        # --- BUCLE DE REINTENTO ROBUSTO ---
+        while retry_count < max_retries:
+            try:
+                if settings.llm_provider in ("gemini", "google") and image_paths:
+                    print(f"[Multimodal] Enviando {len(image_paths)} imagen(es) a Gemini (Intento {retry_count+1})...")
+                    content = [{"type": "text", "text": final_prompt}]
+                    for img_path in image_paths:
+                        if os.path.exists(img_path):
+                            with open(img_path, "rb") as f:
+                                img_data = base64.b64encode(f.read()).decode("utf-8")
+                                content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_data}"}})
+                    response = llm.invoke([HumanMessage(content=content)])
+                else:
+                    print(f"[Razonamiento] Enviando prompt ({settings.llm_provider}) (Intento {retry_count+1})...")
+                    prompt_tmpl = PromptTemplate.from_template(template)
+                    chain = prompt_tmpl | llm
+                    response = chain.invoke({"document_md": safe_markdown, "form_schema": schema_str, "visual_analysis": visual_analysis})
+                
+                # Si llegamos aquí sin excepción, salimos del bucle de reintento
+                break
+            except Exception as e_retry:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    print(f"❌ [ROBUSTEZ] Error fatal tras {max_retries} intentos: {e_retry}")
+                    raise e_retry
+                
+                backoff = (2 ** retry_count) + random.uniform(0, 1)
+                print(f"⚠️ [ROBUSTEZ] Error en LLM (Intento {retry_count}): {e_retry}. Reintentando en {backoff:.2f}s...")
+                time.sleep(backoff)
 
     finally:
         if redis_client:
