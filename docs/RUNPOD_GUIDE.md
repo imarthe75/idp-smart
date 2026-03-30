@@ -56,29 +56,30 @@ Para que el orquestador `idp-smart` pueda encender/apagar Pods y enviar tareas, 
 ### 3.1. Pod Principal de Inferencia (Granite + Qwen2-VL)
 Este se considera el **Pod Principal**. Es el encargado de alojar los modelos pesados (Hugging Face) y debe estar vinculado al "Network Volume" creado en el paso 2.
 
+> [!WARNING]
+> **No utilices la imagen `vllm/vllm-openai:latest` directamente en el campo "Image"** si deseas correr dos modelos simultáneos. Esa imagen tiene bloqueado el `ENTRYPOINT` nativo y provocará el error `vllm: error: unrecognized arguments: -lc`.
+
+Para correr ambos modelos en paralelo en la misma tarjeta gráfica, debes usar una imagen base sin restricciones y encadenar el comando de arranque:
+
 1. Ve a la pestaña **[Pods]** y da clic en **Deploy**.
-2. **Selección de GPU:** Selecciona una **NVIDIA L40S (48GB)**. Es la única que garantiza estabilidad para ambos modelos.
-3. Elige el template **`vLLM`** (oficial) o un contenedor base de PyTorch 2.4+.
-4. **Comandos de Inicio (Terminal):**
-   Deberás abrir dos terminales dentro del Pod o usar un script de inicio (`entrypoint.sh`) para levantar ambos servicios:
+2. **Selección de GPU:** Selecciona una **NVIDIA L40S (48GB)**. Es la única que garantiza estabilidad para ambos modelos de forma concurrente.
+3. Elige el template oficial de **RunPod PyTorch** (ej. `runpod-torch-v240` o `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`).
+4. Haz clic en **Customize Deployment** o en la edición del pod y configura estrictamente lo siguiente:
 
-   ```bash
-   # Terminal 1: Granite 3.0 (Puerto 8000 - Razonamiento / JSON)
-   vllm serve ibm-granite/granite-3.0-8b-instruct --port 8000 --gpu-memory-utilization 0.45 --max-model-len 8192
-
-   # Terminal 2: Qwen Vision (Puerto 8001 - Visión / Sellos)
-   vllm serve Qwen/Qwen2-VL-7B-Instruct-AWQ --port 8001 --gpu-memory-utilization 0.45 --max-model-len 4096
-   ```
+   - **Image:** `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`
+   - **Container Start Command:** Copia y pega exactamente este comando:
+     ```bash
+     bash -lc "pip install vllm qwen-vl-utils && vllm serve ibm-granite/granite-3.0-8b-instruct --port 8000 --gpu-memory-utilization 0.45 --max-model-len 8192 & vllm serve Qwen/Qwen2-VL-7B-Instruct-AWQ --port 8001 --gpu-memory-utilization 0.45 --max-model-len 4096 & wait"
+     ```
+   - **Expose HTTP Ports:** `8000, 8001`
+   - **Volume Mount Path:** `/root/.cache/huggingface` (Vinculado a tu Network Volume `idp-models-cache`).
 
 > [!IMPORTANT]
-> **¿Por qué 0.45?** Una GPU L40S tiene 48GB. Sin este flag, el primer proceso intentará acaparar el 90% (~43GB), dejando al segundo proceso sin memoria. Al usar `0.45`, cada modelo reserva aprox. 21.6GB, permitiendo que ambos coexistan en la misma GPU de 48GB (total ~43.2GB + margen para sistema).
+> **¿Por qué 0.45?** Una GPU L40S tiene 48GB. Sin este flag, el primer proceso intentará acaparar el 90% de la VRAM, dejando al segundo proceso sin memoria. Al usar `0.45`, cada modelo reserva aprox. 21.6GB, permitiendo que ambos coexistan perfectamente y no choquen. Al agregar `&& wait`, nos aseguramos de que el pod mantenga ambos procesos vivos.
 
-5. **Configuración de Red (Expose Ports):**
-   RunPod permite exponer múltiples puertos mediante su sistema de Proxy Inverso inteligente. Para que `idp-smart` funcione, debes:
-   - Configurar en la sección **Expose HTTP Port** (o Network Settings) del Pod los puertos **8000** y **8001**.
-   - RunPod generará dos URLs basadas en el puerto:
-     - `https://[POD_ID]-8000.proxy.runpod.net` (Granite)
-     - `https://[POD_ID]-8001.proxy.runpod.net` (Qwen2-VL)
+5. Una vez que inicie el Pod, RunPod generará dos URLs basadas en los puertos expuestos:
+   - `https://[POD_ID]-8000.proxy.runpod.net` (Portal para Granite)
+   - `https://[POD_ID]-8001.proxy.runpod.net` (Portal para Qwen2-VL)
 
 ---
 

@@ -104,7 +104,7 @@ def get_llm():
                 model=settings.llm_runpod_model,
                 temperature=settings.localai_temperature,
                 max_tokens=settings.localai_max_tokens,
-                timeout=settings.runpod_llm_timeout,
+                timeout=settings.llm_runpod_timeout,
                 model_kwargs={"response_format": {"type": "json_object"}},
                 verbose=True
             )

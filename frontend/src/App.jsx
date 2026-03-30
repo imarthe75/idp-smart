@@ -609,7 +609,11 @@ export default function App() {
       }
     }
 
-    setTasks(prev => [...results, ...prev])
+    // Correcion: solo monitorear tareas si tienen un taskId valido
+    const validResults = (results || []).filter(r => r.taskId && r.taskId !== 'undefined')
+    if (validResults.length > 0) {
+      setTasks(prev => [...validResults, ...prev])
+    }
     setFiles([])
     setReusingDoc(null)
     setCustomExpediente('')

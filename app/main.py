@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, File, UploadFile, BackgroundTasks, Form, Request
+from fastapi import FastAPI, Depends, File, UploadFile, BackgroundTasks, Form, Request, HTTPException
 import logging
 import json
 from fastapi.responses import StreamingResponse
@@ -123,7 +123,7 @@ async def process_document(
         json_content = await json_form.read()
         json.loads(json_content) # Validar que sea JSON válido
     except Exception as e_json:
-        return {"error": f"El archivo 'json_form' no contiene un JSON válido: {str(e_json)}", "code": 400}
+        raise HTTPException(status_code=400, detail=f"El archivo 'json_form' no contiene un JSON válido: {str(e_json)}")
         
     json_object_name = f"{task_id}/form.json"
     upload_file_to_minio(minio_client, json_object_name, json_content, "application/json")
@@ -176,10 +176,9 @@ async def process_document(
                 additional_paths.append(path)
 
     if not pdf_minio_path:
-        return {"error": "Debes proporcionar un 'document' o un 'reuse_task_id' válido.", "code": 400}
+        raise HTTPException(status_code=400, detail="Debes proporcionar un 'document' o un 'reuse_task_id' válido.")
 
     # 4. Registro en DB (USO DE SQL PURO CON CASTING PARA EVITAR ERRORES DE TIPO EN PG18)
-    import json
     # IMPORTANTE: Limpiar cualquier objeto previo en la sesión para evitar INSERTs automáticos fallidos
     db.expunge_all()
     
