@@ -125,6 +125,18 @@ class Settings(BaseSettings):
     worker_concurrency: int = 1
 
     @property
+    def current_llm_model(self) -> str:
+        if self.llm_provider == "google":
+            return self.gemini_model
+        if self.llm_provider == "anthropic":
+            return self.claude_model
+        if self.llm_provider == "openai":
+            return self.openai_model
+        if self.llm_provider in ("runpod", "vllm", "local"):
+            return self.local_llm_model
+        return "unknown"
+
+    @property
     def database_url(self) -> str:
         return (
             f"postgresql+asyncpg://{self.db_user}:{self.db_password}"

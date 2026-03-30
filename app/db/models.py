@@ -33,6 +33,7 @@ class DocumentExtraction(Base):
     # --- Métricas de rendimiento y metadatos ---
     page_count          = Column(Integer, default=0)
     llm_provider        = Column(String(50), nullable=True)
+    llm_model           = Column(String(100), nullable=True)
     gpu_model           = Column(String(100), nullable=True)
     docling_duration_s  = Column(Float, nullable=True)
     ai_duration_s       = Column(Float, nullable=True)

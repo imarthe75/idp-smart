@@ -320,6 +320,7 @@ async def get_status(task_id: str, db: AsyncSession = Depends(get_db)):
         "pdf_path":             row_dict["pdf_minio_path"],
         "markdown_minio_path":  row_dict.get("markdown_minio_path"),
         "llm_provider":         row_dict.get("llm_provider"),
+        "llm_model":            row_dict.get("llm_model"),
         "gpu_model":            row_dict.get("gpu_model"),
         "created_at":           str(row_dict.get("created_at", "")),
         "updated_at":           str(row_dict.get("updated_at", "")),
@@ -368,7 +369,8 @@ async def list_extractions(limit: int = 100, db: AsyncSession = Depends(get_db))
     query = text("""
         SELECT task_id, expediente_id, status, stage_current, act_type, form_code, pdf_minio_path, 
                markdown_minio_path, created_at, updated_at, error_message,
-               docling_duration_s, ai_duration_s, total_duration_s, llm_provider, gpu_model, page_count
+               docling_duration_s, ai_duration_s, total_duration_s, 
+               llm_provider, llm_model, gpu_model, page_count
         FROM idp_smart.document_extractions
         ORDER BY created_at DESC
         LIMIT :limit
@@ -442,8 +444,8 @@ async def get_progress(task_id: str, db: AsyncSession = Depends(get_db)):
     """
     query = text("""
         SELECT task_id, expediente_id, status, stage_current, act_type, form_code,
-               created_at, updated_at, started_at, total_duration_s, llm_provider, 
-               page_count, pdf_minio_path
+               created_at, updated_at, started_at, total_duration_s, 
+               llm_provider, llm_model, page_count, pdf_minio_path
         FROM idp_smart.document_extractions
         WHERE task_id = :task_id
     """)
@@ -506,6 +508,7 @@ async def get_progress(task_id: str, db: AsyncSession = Depends(get_db)):
         "act_type":              row_dict.get("act_type"),
         "form_code":             row_dict.get("form_code"),
         "llm_provider":          row_dict.get("llm_provider"),
+        "llm_model":             row_dict.get("llm_model"),
         "page_count":            row_dict.get("page_count"),
         "file_name":             row_dict.get("expediente_id") or file_name,
         "expediente":            row_dict.get("expediente_id")

@@ -74,7 +74,8 @@ function TaskCard({ task, onDismiss }) {
           <div className="task-engine-info">
             {progress?.llm_provider && (
               <span className="provider-badge">
-                <span className="provider-icon">🤖</span> {progress.llm_provider.toUpperCase()}
+                <span className="provider-icon">🤖</span> {progress.llm_provider.toUpperCase()} 
+                {progress?.llm_model && <span className="model-name-pill">{progress.llm_model}</span>}
               </span>
             )}
             {progress?.gpu_model && (
@@ -329,6 +330,7 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
                 <td>
                   <div className="engine-cell">
                     <span className={`engine-chip ${ex.llm_provider}`}>{ex.llm_provider || '—'}</span>
+                    <span className="model-subtext">{ex.llm_model || '—'}</span>
                     {ex.gpu_model && <span className="gpu-subtext">{ex.gpu_model}</span>}
                   </div>
                 </td>

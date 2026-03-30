@@ -67,11 +67,20 @@ def monitor_performance(func):
     @wraps(func)
     def wrapper(task_id, *args, **kwargs):
         start_t = time.time()
-        # Registrar inicio
         with db_engine.begin() as conn:
             conn.execute(
-                text("UPDATE idp_smart.document_extractions SET started_at = NOW(), llm_provider = :p WHERE task_id = :tid"),
-                {"p": settings.llm_provider, "tid": uuid.UUID(str(task_id))}
+                text("""
+                    UPDATE idp_smart.document_extractions 
+                    SET started_at = NOW(), 
+                        llm_provider = :p,
+                        llm_model = :m 
+                    WHERE task_id = :tid
+                """),
+                {
+                    "p": settings.llm_provider, 
+                    "m": settings.current_llm_model,
+                    "tid": uuid.UUID(str(task_id))
+                }
             )
         try:
             return func(task_id, *args, **kwargs)
@@ -152,10 +161,16 @@ def _set_stage(task_id: str, stage: str, status: str = None):
                 conn.execute(
                     text("""
                         UPDATE idp_smart.document_extractions
-                        SET stage_current = :stage, updated_at = NOW(), llm_provider = :llm_provider
+                        SET stage_current = :stage, updated_at = NOW(), 
+                            llm_provider = :llm_provider, llm_model = :llm_model
                         WHERE task_id = :task_id
                     """),
-                    {"stage": stage, "task_id": uuid.UUID(str(task_id)), "llm_provider": settings.llm_provider},
+                    {
+                        "stage": stage, 
+                        "task_id": uuid.UUID(str(task_id)), 
+                        "llm_provider": settings.llm_provider,
+                        "llm_model": settings.current_llm_model
+                    },
                 )
     except Exception as exc:
         log_event(db_engine, task_id, "SYSTEM", f"No se pudo actualizar stage_current a {stage}: {exc}", level="WARNING")
