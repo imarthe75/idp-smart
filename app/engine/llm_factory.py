@@ -142,13 +142,41 @@ class GeminiProvider(BaseLLM):
         self._model = genai.GenerativeModel(self._model_name)
         logger.info("GeminiProvider: model=%s", self._model_name)
 
+    def _call_with_retry(self, func, *args, **kwargs):
+        """Llamada interna con reintentos para manejar límites de cuota (429)."""
+        import time
+        import random
+        from google.api_core import exceptions
+
+        max_retries = 3
+        base_delay = 5  # segundos
+
+        for attempt in range(max_retries + 1):
+            try:
+                return func(*args, **kwargs)
+            except (exceptions.ResourceExhausted, exceptions.ServiceUnavailable) as e:
+                if attempt == max_retries:
+                    logger.error("Gemini saturation error after %d retries: %s", max_retries, e)
+                    raise
+                
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(
+                    "Gemini quota exceeded (429/503). Retrying in %.1fs... (Attempt %d/%d)",
+                    delay, attempt + 1, max_retries
+                )
+                time.sleep(delay)
+            except Exception as e:
+                logger.error("Unexpected Gemini error: %s", e)
+                raise
+
     def invoke(self, prompt: str, system: str = "") -> str:
         full = f"{system}\n\n{prompt}" if system else prompt
-        return self._model.generate_content(full).text
+        resp = self._call_with_retry(self._model.generate_content, full)
+        return resp.text
 
     def invoke_with_cost(self, prompt: str, system: str = "") -> Tuple[str, float]:
         full = f"{system}\n\n{prompt}" if system else prompt
-        response = self._model.generate_content(full)
+        response = self._call_with_retry(self._model.generate_content, full)
         usage = response.usage_metadata
         cost = (
             usage.prompt_token_count     * self._PRICE_INPUT

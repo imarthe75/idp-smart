@@ -38,7 +38,7 @@ celery_app.conf.update(
     result_serializer='json',
     timezone='America/Mexico_City',
     enable_utc=True,
-    worker_concurrency=1,
+    worker_concurrency=settings.worker_concurrency,
     # ── Beat: tarea de recuperación automática cada 5 minutos ──────────────
     beat_schedule={
         'recover-orphaned-tasks': {
@@ -436,6 +436,12 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
         simplified = {}
         with timed_stage(db_engine, task_id, "SIMPLIFY", "Generación de JSON simplificado {label: value}"):
             simplified = build_simplified_json(final_json)
+            
+            # VALIDACIÓN: Si no hay campos extraídos, la tarea se considera fallida (ERROR_AGENT)
+            if not simplified or len([v for v in simplified.values() if v]) == 0:
+                log_event(db_engine, task_id, "SIMPLIFY", "Extracción vacía detectada.", level="ERROR")
+                raise ValueError("El agente no pudo extraer información útil del documento. Verifique la calidad del PDF o el esquema.")
+
             log_event(db_engine, task_id, "SIMPLIFY",
                       f"JSON simplificado generado con {len(simplified)} campo(s).",
                       detail={"fields": list(simplified.keys())[:20]})

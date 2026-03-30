@@ -104,6 +104,7 @@ async def process_document(
     document: UploadFile | None = File(None),
     additional_documents: list[UploadFile] = File(None),
     reuse_task_id: str | None = Form(None),
+    expediente_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -131,7 +132,7 @@ async def process_document(
 
     # 2. Manejo de Documento Principal / Reúso
     if reuse_task_id:
-        query = text("SELECT pdf_minio_path, markdown_minio_path FROM idp_smart.document_extractions WHERE task_id = :tid")
+        query = text("SELECT pdf_minio_path, markdown_minio_path, page_count FROM idp_smart.document_extractions WHERE task_id = :tid")
         result = await db.execute(query, {"tid": uuid.UUID(reuse_task_id)})
         original = result.fetchone()
         if original:
@@ -139,11 +140,26 @@ async def process_document(
             pdf_object_name = pdf_minio_path.split("idp-documents/")[-1]
             parent_task_id = uuid.UUID(reuse_task_id)
             skip_vision = True if original[1] else False
+            p_count = original[2] or 0
     
     if not pdf_minio_path and document and document.filename:
         doc_content = await document.read()
+        
+        # --- Cálculo inmediato de páginas ---
+        try:
+            import io
+            from pypdf import PdfReader
+            pdf_buf = io.BytesIO(doc_content)
+            reader = PdfReader(pdf_buf)
+            p_count = len(reader.pages)
+        except: p_count = 0
+
         pdf_object_name = f"{task_id}/{document.filename}"
         pdf_minio_path = upload_file_to_minio(minio_client, pdf_object_name, doc_content, document.content_type)
+        
+        # Si el usuario no dio expediente, usamos el nombre del archivo
+        if not expediente_id:
+            expediente_id = document.filename
 
     # 3. Manejo de Documentos Adicionales
     if additional_documents:
@@ -164,17 +180,18 @@ async def process_document(
     
     insert_query = text("""
         INSERT INTO idp_smart.document_extractions 
-            (task_id, act_type, form_code, pdf_minio_path, json_minio_path, 
-             additional_docs, parent_task_id, status, stage_current)
+            (task_id, expediente_id, act_type, form_code, pdf_minio_path, json_minio_path, 
+             additional_docs, parent_task_id, status, stage_current, page_count)
         VALUES 
-            (CAST(:task_id AS UUID), :act_type, :form_code, :pdf_path, :json_path, 
-             CAST(:add_docs AS JSONB), CAST(:parent_tid AS UUID), :status, :stage)
+            (CAST(:task_id AS UUID), :expediente, :act_type, :form_code, :pdf_path, :json_path, 
+             CAST(:add_docs AS JSONB), CAST(:parent_tid AS UUID), :status, :stage, :p_count)
     """)
     
-    print(f"DEBUG DB: Inserting task_id={task_id} parent_tid={parent_task_id}")
+    print(f"DEBUG DB: Inserting task_id={task_id} expediente={expediente_id}")
     
     await db.execute(insert_query, {
         "task_id":     str(task_id),
+        "expediente":  expediente_id,
         "act_type":    act_type,
         "form_code":   form_code,
         "pdf_path":    pdf_minio_path,
@@ -182,7 +199,8 @@ async def process_document(
         "add_docs":    json.dumps(additional_paths),
         "parent_tid":  str(parent_task_id) if parent_task_id else None,
         "status":      "PENDING_CELERY",
-        "stage":       "INICIO"
+        "stage":       "INICIO",
+        "p_count":     p_count
     })
     await db.commit()
     
@@ -291,6 +309,7 @@ async def get_status(task_id: str, db: AsyncSession = Depends(get_db)):
         "task_id":              row_dict["task_id"],
         "status":               row_dict["status"],
         "stage_current":        row_dict.get("stage_current"),
+        "error_message":        row_dict.get("error_message"),
         "act_type":             row_dict["act_type"],
         "form_code":            row_dict["form_code"],
         "pdf_path":             row_dict["pdf_minio_path"],
@@ -340,8 +359,8 @@ async def list_extractions(limit: int = 100, db: AsyncSession = Depends(get_db))
     Lista las extracciones procesadas recientemente.
     """
     query = text("""
-        SELECT task_id, status, stage_current, act_type, form_code, pdf_minio_path, 
-               markdown_minio_path, created_at, updated_at,
+        SELECT task_id, expediente_id, status, stage_current, act_type, form_code, pdf_minio_path, 
+               markdown_minio_path, created_at, updated_at, error_message,
                docling_duration_s, ai_duration_s, total_duration_s, llm_provider, page_count
         FROM idp_smart.document_extractions
         ORDER BY created_at DESC
@@ -363,7 +382,16 @@ async def list_extractions(limit: int = 100, db: AsyncSession = Depends(get_db))
 async def delete_extraction(task_id: str, db: AsyncSession = Depends(get_db)):
     """
     Elimina el registro de una extracción, sus logs y sus archivos en MinIO.
+    También cancela la tarea en Celery si está pendiente o en ejecución.
     """
+    # 0. Cancelar tarea en Celery
+    try:
+        from worker.celery_app import celery_app as celery
+        celery.control.revoke(task_id, terminate=True, signal='SIGKILL')
+        print(f"🛑 [Celery] Tarea {task_id} revocada/cancelada.")
+    except Exception as e_celery:
+        print(f"⚠️ Error al revocar tarea Celery {task_id}: {e_celery}")
+
     # 1. Eliminar archivos en MinIO
     try:
         minio_client = get_minio_client()
@@ -375,7 +403,11 @@ async def delete_extraction(task_id: str, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         print(f"Error limpiando MinIO para {task_id}: {e}")
 
-    # 2. Eliminar logs relacionados
+    # 2. Eliminar métricas y logs relacionados
+    await db.execute(
+        text("DELETE FROM idp_smart.hardware_benchmarks WHERE task_id = :task_id"),
+        {"task_id": task_id}
+    )
     await db.execute(
         text("DELETE FROM idp_smart.process_logs WHERE task_id = :task_id"),
         {"task_id": task_id}
@@ -389,7 +421,7 @@ async def delete_extraction(task_id: str, db: AsyncSession = Depends(get_db)):
     if result.rowcount == 0:
         return {"error": "Tarea no encontrada."}
         
-    return {"status": "Deleted", "task_id": task_id, "cleanup": "MinIO and Logs processed"}
+    return {"status": "Deleted", "task_id": task_id, "cleanup": "MinIO, Logs and Celery Revoked"}
 
 
 @app.get("/api/v1/progress/{task_id}", tags=["Monitoreo"])
@@ -402,8 +434,9 @@ async def get_progress(task_id: str, db: AsyncSession = Depends(get_db)):
     **Diseñado para llamarse cada 3-5 segundos desde el frontend.**
     """
     query = text("""
-        SELECT task_id, status, stage_current, act_type, form_code,
-               created_at, updated_at, started_at, total_duration_s, llm_provider, page_count
+        SELECT task_id, expediente_id, status, stage_current, act_type, form_code,
+               created_at, updated_at, started_at, total_duration_s, llm_provider, 
+               page_count, pdf_minio_path
         FROM idp_smart.document_extractions
         WHERE task_id = :task_id
     """)
@@ -448,6 +481,9 @@ async def get_progress(task_id: str, db: AsyncSession = Depends(get_db)):
     if 0 < pct < 100 and elapsed_s > 0 and not finished:
         estimated_remaining_s = int((elapsed_s / pct) * (100 - pct))
 
+    # Extraer nombre de archivo de la ruta de MinIO
+    file_name = row_dict.get("pdf_minio_path", "").split('/')[-1] if row_dict.get("pdf_minio_path") else None
+
     return {
         "task_id":               task_id,
         "status":                status,
@@ -464,6 +500,8 @@ async def get_progress(task_id: str, db: AsyncSession = Depends(get_db)):
         "form_code":             row_dict.get("form_code"),
         "llm_provider":          row_dict.get("llm_provider"),
         "page_count":            row_dict.get("page_count"),
+        "file_name":             row_dict.get("expediente_id") or file_name,
+        "expediente":            row_dict.get("expediente_id")
     }
 
 
@@ -498,7 +536,7 @@ async def get_simplified_json(task_id: str, db: AsyncSession = Depends(get_db)):
     ```
     """
     query = text("""
-        SELECT task_id, status, act_type, form_code, simplified_json
+        SELECT task_id, status, act_type, form_code, simplified_json, error_message, stage_current
         FROM idp_smart.document_extractions
         WHERE task_id = :task_id
     """)
@@ -509,6 +547,17 @@ async def get_simplified_json(task_id: str, db: AsyncSession = Depends(get_db)):
         return {"error": "Tarea no encontrada."}
 
     row_dict = dict(row._mapping)
+    
+    # Caso: La tarea falló oficialmente
+    if row_dict["status"].startswith("ERROR_"):
+        return {
+            "task_id": row_dict["task_id"],
+            "status": row_dict["status"],
+            "message": row_dict.get("error_message") or f"Error en etapa {row_dict.get('stage_current')}",
+            "simplified_json": None
+        }
+
+    # Caso: Aún no termina (no hay json ni error)
     if row_dict.get("simplified_json") is None:
         return {
             "task_id": row_dict["task_id"],

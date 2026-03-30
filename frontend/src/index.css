@@ -284,4 +284,78 @@ body {
 
 .engine-chip.google { background: #e8f0fe; color: #1a73e8; }
 .engine-chip.localai { background: #fef3c7; color: #d97706; }
-.engine-chip.runpod { background: #fdf2f8; color: #db2777; }
+
+/* ── Mejoras de UX Premium para TaskCard ── */
+.task-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.task-label {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1a1c21;
+}
+
+.task-file-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.file-name-line {
+  font-weight: 600;
+  color: #4b5563;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-count-badge {
+  background: #fdf2f8;
+  color: #db2777;
+  padding: 4px 10px;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid #fce7f3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.provider-badge {
+  background: #eff6ff;
+  color: #2563eb;
+  padding: 4px 10px;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid #dbeafe;
+  width: fit-content !important;
+  margin-left: 0 !important;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Form Styles */
+.field-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.input-group input:focus {
+  outline: 2px solid var(--primary);
+  border-color: transparent;
+}

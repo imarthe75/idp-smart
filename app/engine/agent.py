@@ -121,7 +121,7 @@ def get_llm():
                 print("Error: No se ha configurado la GOOGLE_API_KEY.")
                 return None
             os.environ["GOOGLE_API_KEY"] = settings.google_api_key
-            gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+            gemini_model = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
             print(f"Conectando a Google Gemini ({gemini_model})...")
             return ChatGoogleGenerativeAI(
                 model=gemini_model,
@@ -227,40 +227,46 @@ def extract_form_data(document_md: str, form_schema: dict, visual_analysis: str 
     Implementa la lógica de 'Fusión Legal' (Multimodal en Gemini, Texto en otros).
     """
     template = """
-EXTRACCIÓN DE DATOS LEGALES CON MÁXIMA PRECISIÓN
+EXTRACCIÓN DE DATOS LEGALES CON MÁXIMA PRECISIÓN (ESTRATEGIA MULTI-ENTIDAD)
 
-Eres un experto en documentos legales mexicanos. Tu tarea es MAPEAR EXACTAMENTE cada UUID del esquema 
-al valor correspondiente en el documento. NO inventes datos, NO simplifiques, NO agregues información.
+Eres un experto en documentos legales mexicanos y análisis notarial. Tu tarea es MAPEAR EXACTAMENTE cada UUID del esquema al valor correspondiente en el documento, ignorando variaciones terminológicas y enfocándote en la FUNCIÓN LEGAL.
 
-INSTRUCCIONES CRÍTICAS:
+INSTRUCCIONES ESTRUCTURALES CRÍTICAS:
 
-1️⃣ LECTURA COMPLETA:
-   - Lee TODA la información del documento
-   - Si hay múltiples solicitantes o titulares, extráelos TODOS.
+1️⃣ FLEXIBILIDAD DE ROLES (MAPEO SEMÁNTICO):
+   - Si el esquema pide "Adquirientes" pero el documento es una DONACIÓN, extrae a los "DONATARIOS" en ese campo.
+   - Si el esquema pide "Enajenantes" pero el documento es una DONACIÓN, extrae a los "DONANTES".
+   - Si el documento es un FIDEICOMISO, mapea: Fideicomitente → Enajenante, Fideicomisario → Adquiriente.
+   - GUÍA DE ROLES: "Quien transmite/vende/dona" = Enajenante. "Quien recibe/compra/adquiere" = Adquiriente.
 
-2️⃣ ESTRUCTURA DE RETORNO - UUID → VALUE:
-   El JSON retornado debe mapear los UUIDs del esquema a sus valores encontrados.
+2️⃣ ESTRATEGIA DE DETECCIÓN EXTENSIVA:
+   - NO OMITAS A NADIE. Si hay 10 copropietarios o herederos, extráelos a los 10 si el contenedor es repetitivo.
+   - Busca figuras "ocultas": Representantes legales (apoderados), cónyuges bajo sociedad conyugal, y testigos que actúan como partes.
+   - Si el esquema indica "repetitiva": true, DEBES retornar un ARRAY de objetos [{{...}}, {{...}}].
 
-3️⃣ VALORES EXACTOS:
-   - Nombres: EXACTOS como aparecen.
-   - Fechas: YYYY-MM-DD.
-   - Montos y Porcentajes: Solo números.
+3️⃣ ESTRUCTURA DE RETORNO - UUID → VALUE:
+   El JSON debe usar EXCLUSIVAMENTE los UUIDs como claves. Ejemplo: {{"uuid_123": "Nombre", "uuid_456": [{{...}}, {{...}}]}}
 
-4️⃣ FUSIÓN LEGAL (MÁXIMA PRIORIDAD):
-   Fusiona el texto de Docling con la evidencia visual de las imágenes (firmas, sellos, hologramas).
-   SI HAY CONFLICTO ENTRE EL OCR Y LA IMAGEN, PREVALECE LA IMAGEN.
-   - Si el OCR no lee un nombre pero en la imagen hay una firma con sello claro, extrae el dato de la imagen.
+4️⃣ VALORES EXACTOS Y FORMATOS:
+   - Nombres: EXACTOS (ej: "LIC. JUAN PEREZ RODRIGUEZ").
+   - Fechas: ISO YYYY-MM-DD.
+   - Montos: Solo números puros (ej: 1500000.00).
 
-EVIDENCIA VISUAL (Puerto 8001):
+5️⃣ FUSIÓN LEGAL (ANÁLISIS VISUAL):
+   Si el análisis visual detecta sellos o firmas de personas que no están explícitamente en el texto del OCR, úsalos para completar los nombres de los otorgantes.
+
+🚨 NO INVENTES DATOS. Si un campo no existe, déjalo vacío o null según corresponda al tipo.
+
+EVIDENCIA VISUAL:
 {visual_analysis}
 
-ESQUEMA (estructura y UUIDs):
+ESQUEMA TÉCNICO (UUIDs y Etiquetas):
 {form_schema}
 
-DOCUMENTO (Markdown):
+CONTENIDO DEL DOCUMENTO (Markdown):
 {document_md}
 
-Respuesta (JSON):
+Respuesta en JSON robusto:
 """
     
     llm = get_llm()
@@ -270,7 +276,8 @@ Respuesta (JSON):
     
     minified_schema = minify_schema(form_schema)
     schema_str = json.dumps(minified_schema, indent=2)
-    safe_markdown = (document_md or "")[:30000]
+    # Soporte para documentos masivos (500k chars = ~125k tokens | Gemini 3.1 Flash soporta 1M tokens)
+    safe_markdown = (document_md or "")[:500000]
     
     final_prompt = template.format(
         visual_analysis=visual_analysis or "No se proporcionó análisis adicional.",
@@ -281,88 +288,93 @@ Respuesta (JSON):
     import time
     start_time = time.time()
 
-    if settings.llm_provider in ("gemini", "google") and image_paths:
-        print(f"[Multimodal] Enviando {len(image_paths)} imagen(es) a Gemini para Fusion Legal...")
-        content = [{"type": "text", "text": final_prompt}]
+    # --- SEMÁFORO DISTRIBUIDO PARA COLA CLOUD (EVITAR 429) ---
+    # Limitar a solo 2 trabajadores simultáneos hablando con Google/Cloud
+    import redis
+    import time
+    
+    use_semaphore = settings.llm_provider in ("google", "gemini", "anthropic", "openai")
+    redis_client = None
+    if use_semaphore:
+        try:
+            redis_client = redis.from_url(settings.valkey_url)
+        except: pass
 
-        for img_path in image_paths:
-            if os.path.exists(img_path):
-                with open(img_path, "rb") as f:
-                    img_data = base64.b64encode(f.read()).decode("utf-8")
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{img_data}"}
-                    })
+    response = None
+    try:
+        if redis_client:
+            semaphore_name = f"sem:ai_concurrency:{settings.llm_provider}"
+            start_wait = time.time()
+            max_concurrent = int(os.environ.get("MAX_CLOUD_CONCURRENCY", "2"))
+            while True:
+                current_active = redis_client.get(semaphore_name)
+                if not current_active or int(current_active) < max_concurrent:
+                    redis_client.incr(semaphore_name)
+                    redis_client.expire(semaphore_name, 300)
+                    print(f"📡 [RateLimit] Slot adquirido para {settings.llm_provider}.")
+                    break
+                if time.time() - start_wait > 180: break
+                time.sleep(2)
 
-        message = HumanMessage(content=content)
-        response = llm.invoke([message])
-    else:
-        print(f"[Razonamiento] Enviando prompt ({settings.llm_provider})...")
-        prompt_tmpl = PromptTemplate.from_template(template)
-        chain = prompt_tmpl | llm
-        response = chain.invoke({
-            "document_md": safe_markdown,
-            "form_schema": schema_str,
-            "visual_analysis": visual_analysis
-        })
+        # Pequeño stagger adicional para evitar ráfagas exactas
+        import random
+        time.sleep(random.uniform(0.1, 1.5))
+
+        if settings.llm_provider in ("gemini", "google") and image_paths:
+            print(f"[Multimodal] Enviando {len(image_paths)} imagen(es) a Gemini...")
+            content = [{"type": "text", "text": final_prompt}]
+            for img_path in image_paths:
+                if os.path.exists(img_path):
+                    with open(img_path, "rb") as f:
+                        img_data = base64.b64encode(f.read()).decode("utf-8")
+                        content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_data}"}})
+            response = llm.invoke([HumanMessage(content=content)])
+        else:
+            print(f"[Razonamiento] Enviando prompt ({settings.llm_provider})...")
+            prompt_tmpl = PromptTemplate.from_template(template)
+            chain = prompt_tmpl | llm
+            response = chain.invoke({"document_md": safe_markdown, "form_schema": schema_str, "visual_analysis": visual_analysis})
+
+    finally:
+        if redis_client:
+            redis_client.decr(semaphore_name)
+            print(f"📡 [RateLimit] Slot liberado para {settings.llm_provider}.")
+
+    if not response or not response.content:
+        print("❌ Error: Respuesta del LLM vacía o nula.")
+        return {}
 
     elapsed = time.time() - start_time
     print(f"✅ [Razonamiento] Completado en {elapsed:.2f}s")
     
     text_response = response.content.strip()
-    print(f"📝 [DEBUG] Respuesta RAW (primeros 100 chars): {text_response[:100]}...")
-    
-    # Limpieza robusta: eliminar posibles bloques markdown si el modelo los incluyó
-    # (aunque con json_object no debería, es mejor prevenir para compatibilidad)
     clean_text = text_response
     if "```json" in clean_text:
         clean_text = clean_text.split("```json")[-1].split("```")[0]
     elif "```" in clean_text:
         clean_text = clean_text.split("```")[-1].split("```")[0]
-    
     clean_text = clean_text.strip()
     
     try:
-        # Si la respuesta es vacía, levantar error para intentar reparar
-        if not clean_text or clean_text == "":
-            raise ValueError("Respuesta del LLM vacía")
-            
-        # Intentar parseo directo
-        extracted_json = json.loads(clean_text)
-        return extracted_json
+        return json.loads(clean_text)
     except Exception as e1:
         print(f"❌ Intento 1 fallido de parseo LLM ({e1}). Intentando reparar...")
-        
-        # Si el modelo cortó a la mitad, forzamos cerrar las llaves y comillas.
         start_idx = text_response.find('{')
         if start_idx != -1:
             json_str = text_response[start_idx:]
-            
-            # Estrategia de reparación: contar llaves y arrays, cerrar lo que falta
             open_braces = json_str.count('{') - json_str.count('}')
             open_brackets = json_str.count('[') - json_str.count(']')
-            open_quotes = len(re.findall(r'(?<!\\)"', json_str)) % 2  # detecta comillas desemparejadas
-            
-            # Limpiar caracteres cortados
-            json_str = re.sub(r'["}\]]\s*$', '', json_str)  # quita caracteres incompletos al final
-            
-            # Cerrar lo que falta
-            if open_quotes:
-                json_str += '"'
-            if open_brackets > 0:
-                json_str += ']' * open_brackets
-            if open_braces > 0:
-                json_str += '}' * open_braces
-                
+            open_quotes = len(re.findall(r'(?<!\\)"', json_str)) % 2
+            json_str = re.sub(r'["}\]]\s*$', '', json_str)
+            if open_quotes: json_str += '"'
+            if open_brackets > 0: json_str += ']' * open_brackets
+            if open_braces > 0: json_str += '}' * open_braces
             try:
                 extracted_json = json.loads(json_str)
                 print(f"✅ JSON reparado exitosamente")
                 return extracted_json
             except Exception as e2:
                 print(f"❌ Intento 2 de reparación fallido: {e2}")
-                print(f"⚠️ RAW TEXT DEL MODELO:\n------\n{text_response[:500]}\n------")
-                return {}
-        else:
-            print(f"❌ No se encontró un bloque JSON en la respuesta.")
-            print(f"⚠️ RAW TEXT DEL MODELO:\n------\n{text_response[:500]}\n------")
-            return {}
+                raise ValueError(f"No se pudo extraer un JSON válido del LLM tras reparación: {e2}")
+        
+        raise ValueError("No se encontró ninguna estructura JSON '{ ... }' en la respuesta del LLM.")

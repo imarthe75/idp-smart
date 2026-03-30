@@ -42,30 +42,28 @@ Al enlazar el volumen a este path, `vLLM` y `Docling` guardarán (y buscarán) l
 
 ## 3. Configuración y Despliegue de los Pods
 
-### 3.1. Pod de Inferencia Multimodal (Qwen2-VL / Granite)
-Se utiliza de fábrica el Template oficial de vLLM, al cual le pasaremos el volumen y la configuración del servidor.
+### 3.1. Pod de Inferencia Multimodal Dual (Granite + Qwen2-VL)
+Para el **Proyecto Tolucón**, es **OBLIGATORIO** cargar ambos modelos simultáneamente para permitir la orquestación de Visión + Razonamiento Legal.
 
 1. Ve a la pestaña **[Pods]** y da clic en **Deploy**.
-2. **Selección de GPU:** Filtra y selecciona  `L40S` o  `A5000 (32+ VRAM)` o `RTX 5090`. Asegúrate de que el Datacenter sea el mismo del Network Volume.
-3. Elige el template **`vLLM`** (oficial) de la categoría *Serverless* / *Community*.
-4. **Volume Settings (Personalización):**
-   * Elige tu Network Volume creado: `idp-models-cache`
-   * Container Mount Path: `/root/.cache/huggingface`
-5. **Environment Variables (Variables de Entorno):**
-   En el apartado `Override Container Variables`, asegúrate de enviar los comandos a `vLLM` para descargar/exponer Qwen o Granite.
-   
-   **Ejemplo (Para levantar IBM Granite):**
-   ```text
-   MODEL_NAME=ibm-granite/granite-3.0-8b-instruct
-   MAX_MODEL_LEN=8192
+2. **Selección de GPU:** Selecciona una **NVIDIA L40S (48GB)**. Es la única que garantiza estabilidad para ambos modelos.
+3. Elige el template **`vLLM`** (oficial) o un contenedor base de PyTorch 2.4+.
+4. **Comandos de Inicio (Terminal):**
+   Deberás abrir dos terminales dentro del Pod o usar un script de inicio (`entrypoint.sh`) para levantar ambos servicios:
+
+   ```bash
+   # Terminal 1: Granite 3.0 (Puerto 8000 - Razonamiento / JSON)
+   vllm serve ibm-granite/granite-3.0-8b-instruct --port 8000 --gpu-memory-utilization 0.45 --max-model-len 8192
+
+   # Terminal 2: Qwen Vision (Puerto 8001 - Visión / Sellos)
+   vllm serve Qwen/Qwen2-VL-7B-Instruct-AWQ --port 8001 --gpu-memory-utilization 0.45 --max-model-len 4096
    ```
 
-   **Ejemplo (Para levantar Vision Qwen2-VL):**
-   ```text
-   MODEL_NAME=Qwen/Qwen2-VL-7B-Instruct-AWQ
-   ```
+> [!IMPORTANT]
+> El parámetro `--gpu-memory-utilization 0.45` es crítico. Permite que ambos modelos coexistan en la misma GPU de 48GB sin pelear por la memoria. No lo omitas.
 
-> **Nota:** En configuraciones avanzadas, puedes crear dos Pods distintos o consolidarlos, pero recuerda que el consumo de VRAM de ejecutar dos modelos grandes concurrentes requiere típicamente la L40S de 48GB.
+5. **Configuración de Red (Expose Ports):**
+   Asegúrate de que en RunPod el Pod tenga expuestos los puertos **8000** y **8001** en la configuración de `HTTP Service`.
 
 ---
 

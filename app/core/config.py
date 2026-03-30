@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
+from typing import Optional, Union
 
 
 class Settings(BaseSettings):
@@ -57,13 +57,13 @@ class Settings(BaseSettings):
     runpod_timeout: int = 600
 
     # ── Docling CPU Mode ───────────────────────────────────────────────────────
-    docling_chunk_size: int = 10        # páginas por chunk en CPU
+    docling_chunk_size: Union[int, str] = 10        # páginas por chunk en CPU
     omp_num_threads: int = 0            # 0 = auto (hardware_detector)
     mkl_num_threads: int = 0            # 0 = auto (hardware_detector)
 
     # ── Google (Gemini) ────────────────────────────────────────────────────────
     google_api_key: Optional[str] = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-2.0-flash"
     google_docai_project_id: Optional[str] = None
     google_docai_location: str = "us"
     google_docai_processor_id: Optional[str] = None
@@ -120,6 +120,9 @@ class Settings(BaseSettings):
     docling_runpod_timeout: int = 600
     docling_runpod_max_retries: int = 3
     docling_runpod_fallback_to_local: bool = True
+
+    # ── Celery ─────────────────────────────────────────────────────────────────
+    worker_concurrency: int = 1
 
     @property
     def database_url(self) -> str:

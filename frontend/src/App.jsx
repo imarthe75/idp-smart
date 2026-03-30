@@ -46,8 +46,8 @@ function TaskCard({ task, onDismiss }) {
 
   const pct = progress?.progress_pct ?? 0
   const finished = progress?.finished
-  const isError = progress?.status === 'ERROR'
-  const stageLabel = progress?.stage_label ?? 'Iniciando…'
+  const isError = progress?.status?.startsWith('ERROR') || progress?.status === 'ERROR'
+  const stageLabel = progress?.message || progress?.stage_label || 'Iniciando…'
   const elapsed = progress?.elapsed_seconds
   const remaining = progress?.estimated_remaining_s
 
@@ -61,8 +61,20 @@ function TaskCard({ task, onDismiss }) {
             {finished ? (isError ? '✗ Error' : '✓ Completado') : '⟳ En proceso'}
           </span>
           <span className="task-label">{task.actLabel}</span>
+          <div className="task-file-info">
+            <span className="file-name-line">
+              <span className="file-icon">📁</span> {progress?.file_name || task.fileName}
+            </span>
+            {progress?.page_count > 0 && (
+              <span className="page-count-badge">
+                <span className="page-count-icon">📄</span> {progress.page_count} {progress.page_count === 1 ? 'página' : 'páginas'}
+              </span>
+            )}
+          </div>
           {progress?.llm_provider && (
-            <span className="provider-badge">{progress.llm_provider.toUpperCase()}</span>
+            <span className="provider-badge">
+              <span className="provider-icon">🤖</span> {progress.llm_provider.toUpperCase()}
+            </span>
           )}
         </div>
         <div className="task-times">
@@ -418,6 +430,7 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false)
   const [tasks, setTasks]           = useState([])
   const [reusingDoc, setReusingDoc] = useState(null) // { taskId, fileName }
+  const [customExpediente, setCustomExpediente] = useState('')
 
   useEffect(() => {
     const handler = (e) => {
@@ -493,6 +506,7 @@ export default function App() {
       fd.append('form_code', String(selectedAct.form_code))
       fd.append('json_form', jsonBlob, 'form.json')
       fd.append('reuse_task_id', reusingDoc.taskId)
+      if (customExpediente) fd.append('expediente_id', customExpediente)
       try {
         const { data } = await axios.post(`${API_BASE}/api/v1/process`, fd)
         results.push({
@@ -509,6 +523,7 @@ export default function App() {
       fd.append('form_code', String(selectedAct.form_code))
       fd.append('json_form', jsonBlob, 'form.json')
       fd.append('document',  files[0]) // primer archivo es el principal
+      if (customExpediente) fd.append('expediente_id', customExpediente)
       for (let i = 1; i < files.length; i++) {
         fd.append('additional_documents', files[i])
       }
@@ -531,6 +546,7 @@ export default function App() {
         fd.append('form_code', String(selectedAct.form_code))
         fd.append('json_form', jsonBlob, 'form.json')
         fd.append('document',  file)
+        if (customExpediente) fd.append('expediente_id', customExpediente)
         try {
           const { data } = await axios.post(`${API_BASE}/api/v1/process`, fd, {
             headers: { 'Content-Type': 'multipart/form-data' },
@@ -553,6 +569,7 @@ export default function App() {
     setTasks(prev => [...results, ...prev])
     setFiles([])
     setReusingDoc(null)
+    setCustomExpediente('')
     setSubmitting(false)
   }
 
@@ -634,8 +651,21 @@ export default function App() {
 
               {/* Paso 2 */}
               <div className="step">
-                <div className="step-label">PASO 2 — DOCUMENTOS O REÚSO</div>
+                <div className="step-label">PASO 2 — IDENTIFICACIÓN Y DOCUMENTOS</div>
                 
+                <div className="input-group" style={{marginBottom: '1.5rem'}}>
+                  <label htmlFor="expediente" className="field-label">Nombre del proceso / Expediente (Opcional)</label>
+                  <input 
+                    id="expediente"
+                    type="text" 
+                    placeholder="Ej. Escritura 42.105 - Juarez"
+                    value={customExpediente}
+                    onChange={(e) => setCustomExpediente(e.target.value)}
+                    className="act-select" // Reutilizamos estilo
+                    style={{padding: '0.8rem', fontSize: '1rem'}}
+                  />
+                </div>
+
                 {reusingDoc ? (
                   <div className="reuse-notice">
                     <div className="reuse-info">

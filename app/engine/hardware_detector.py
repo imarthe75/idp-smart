@@ -40,8 +40,12 @@ def detect_hardware() -> HardwareProfile:
     Inspecciona el hardware disponible una sola vez (cached).
     Método: intenta llamar nvidia-smi; si falla, asume CPU.
     """
-    # ── CPU baseline ─────────────────────────────────────────────────────────
-    cpu_cores = os.cpu_count() or 4
+    # CPU detectando afinidad real (Docker cpuset)
+    try:
+        # sched_getaffinity devuelve el conjunto de núcleos permitidos para el proceso actual
+        cpu_cores = len(os.sched_getaffinity(0))
+    except (AttributeError, Exception):
+        cpu_cores = os.cpu_count() or 4
 
     # RAM total en GB
     try:
@@ -93,12 +97,32 @@ def detect_hardware() -> HardwareProfile:
     else:
         docling_device = "cpu"
         processing_unit = "CPU"
-        # En CPU reservamos 2 cores para el API/BD, el resto para Docling
-        worker_cores = max(1, cpu_cores - 2)
-        omp_threads = worker_cores
-        mkl_threads = worker_cores
-        # Chunking agresivo en CPU: 10 páginas ~ 500 MB RAM estimado
-        pdf_chunk_size = int(os.environ.get("DOCLING_CHUNK_SIZE", "10"))
+        # En un worker dedicado (Celery), usamos TODOS sus núcleos asignados (cpuset)
+        # pero dejamos 1 libre para orquestación interna
+        omp_threads = max(1, cpu_cores - 1)
+        mkl_threads = omp_threads
+        
+        # ── ADAPTACIÓN DINÁMICA DE CHUNK SIZE ───────────────────────────
+        # Si está en el .env como un número, lo respetamos.
+        # Si no, calculamos el óptimo según hardware:
+        env_chunk = os.environ.get("DOCLING_CHUNK_SIZE", "auto")
+        if env_chunk.isdigit():
+            pdf_chunk_size = int(env_chunk)
+        else:
+            # --- Cálculo de Tamaño de Chunk (Seguridad RAM 2GB) ---
+            # 48GB total -> ~24 chunks máx para seguridad absoluta.
+            max_chunks_by_ram = max(4, int(ram_gb // 2.0))
+            
+            # Estimación por CPU (base 6, +1 cada 2 núcleos extra)
+            ideal_chunks_by_cpu = max(6, min(30, 6 + (cpu_cores - 8) // 2))
+            
+            # El chunk final respeta el límite de RAM
+            pdf_chunk_size = min(ideal_chunks_by_cpu, max_chunks_by_ram)
+            logger.info("⚙️ [AUTO-TUNE] pdf_chunk_size calculado: %d (RAM limit: %d)", pdf_chunk_size, max_chunks_by_ram)
+
+        # En modo masivo paralelo, forzamos 1 hilo interno para evitar sobre-saturación
+        omp_threads = 1
+        mkl_threads = 1
 
     profile = HardwareProfile(
         has_gpu=has_gpu,

@@ -1,16 +1,33 @@
+#version: '3.8'
+
+x-worker-base: &worker-base
+  build: .
+  restart: always
+  env_file: .env
+  volumes:
+    - ./app:/app
+  depends_on:
+    - valkey
+    - minio
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  command: celery -A worker.celery_app worker --loglevel=info --concurrency=1
+  deploy:
+    resources:
+      limits:
+        # ARQUITECTURA NOTARIAL: 8 workers concurrentes x 6GB = 48GB
+        memory: 6000M
+
 services:
   valkey:
     image: valkey/valkey:7.2
     container_name: idp_valkey
-    ports:
-      - "6379:6379"
+    ports: ["6379:6379"]
     restart: always
 
   db:
     image: postgres:18
     container_name: idp_db
-    # ports:
-    #   - "5432:5432"
     environment:
       - POSTGRES_USER=admin_user
       - POSTGRES_PASSWORD=Ad54=Tx91.Vm+23_Qr78
@@ -23,109 +40,112 @@ services:
   minio:
     image: minio/minio:latest
     container_name: idp_minio
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+    ports: ["9000:9000", "9001:9001"]
     environment:
       - MINIO_ROOT_USER=admin
       - MINIO_ROOT_PASSWORD=minio_password123
       - MINIO_NOTIFY_WEBHOOK_ENABLE_primary=on
       - MINIO_NOTIFY_WEBHOOK_ENDPOINT_primary=http://api:8000/api/v1/internal/minio-event
     command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
+    volumes: ["minio_data:/data"]
     restart: always
 
   minio_setup:
     image: minio/mc
-    container_name: idp_minio_setup
-    depends_on:
-      - minio
+    depends_on: [minio]
     entrypoint: >
       /bin/sh -c "
-      until (/usr/bin/mc alias set myminio http://minio:9000 admin minio_password123) do echo 'Waiting for MinIO...' && sleep 1; done;
+      until (/usr/bin/mc alias set myminio http://minio:9000 admin minio_password123) do sleep 1; done;
       /usr/bin/mc mb -p myminio/idp-documents;
       /usr/bin/mc event add myminio/idp-documents arn:minio:sqs::primary:webhook --event put;
-      echo 'MinIO Reactivity Configured!';
       "
 
   api:
     build: .
     container_name: idp_api
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 3
-    volumes:
-      - ./app:/app
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    depends_on:
-      - valkey
-      - minio
-      # - db
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    volumes: ["./app:/app"]
+    ports: ["8000:8000"]
+    env_file: [.env]
+    depends_on: [valkey, minio]
 
-  worker:
+  celery_beat:
     build: .
-    container_name: idp_worker
-    entrypoint: >
-      sh -c "
-      if [ \"$LLM_PROVIDER\" = \"runpod\" ]; then
-        echo '🚀 RunPod Provider detectado. Ajustando timeouts de red a 600s...';
-      fi;
-      celery -A worker.celery_app beat --loglevel=info --detach;
-      celery -A worker.celery_app worker --loglevel=info -c 1
-      "
-    volumes:
-      - ./app:/app
-    env_file:
-      - .env
-    depends_on:
-      - valkey
-      - minio
-      # - db
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    container_name: idp_beat
+    command: celery -A worker.celery_app beat --loglevel=info
+    volumes: ["./app:/app"]
+    env_file: [.env]
+    depends_on: [valkey]
+    restart: always
+
+  # --- TRABAJADORES NODO 0 (CPUs 0-23) | 4 Workers x 6 cores ---
+  worker_n0_1:
+    <<: *worker-base
+    container_name: idp_worker_n0_1
+    cpuset: "0-5"
+    environment: [OMP_NUM_THREADS=6]
+
+  worker_n0_2:
+    <<: *worker-base
+    container_name: idp_worker_n0_2
+    cpuset: "6-11"
+    environment: [OMP_NUM_THREADS=6]
+
+  worker_n0_3:
+    <<: *worker-base
+    container_name: idp_worker_n0_3
+    cpuset: "12-17"
+    environment: [OMP_NUM_THREADS=6]
+
+  worker_n0_4:
+    <<: *worker-base
+    container_name: idp_worker_n0_4
+    cpuset: "18-23"
+    environment: [OMP_NUM_THREADS=6]
+
+  # --- TRABAJADORES NODO 1 (CPUs 24-47) | 4 Workers x 6 cores ---
+  worker_n1_1:
+    <<: *worker-base
+    container_name: idp_worker_n1_1
+    cpuset: "24-29"
+    environment: [OMP_NUM_THREADS=6]
+
+  worker_n1_2:
+    <<: *worker-base
+    container_name: idp_worker_n1_2
+    cpuset: "30-35"
+    environment: [OMP_NUM_THREADS=6]
+
+  worker_n1_3:
+    <<: *worker-base
+    container_name: idp_worker_n1_3
+    cpuset: "36-41"
+    environment: [OMP_NUM_THREADS=6]
+
+  worker_n1_4:
+    <<: *worker-base
+    container_name: idp_worker_n1_4
+    cpuset: "42-47"
+    environment: [OMP_NUM_THREADS=6]
 
   localai:
-    # Use 'localai/localai:latest-gpu-nvidia-cuda-12' and uncomment 'deploy' section below if an NVIDIA GPU is present.
     image: localai/localai:latest
     container_name: idp_localai
-    ports:
-      - "8080:8080"
-    environment:
-      - THREADS=4
-      - MODELS_PATH=/models
-      - DEBUG=true
-    volumes:
-      - ./localai/models_clean:/models
-      - localai_data:/build
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    ports: ["8080:8080"]
+    environment: [THREADS=4, MODELS_PATH=/models]
+    volumes: ["./localai/models_clean:/models", "localai_data:/build"]
     restart: always
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   frontend:
     image: node:lts
     container_name: idp_frontend
     working_dir: /app
     command: sh -c "npm install && npm run dev -- --host"
-    volumes:
-      - ./frontend:/app
-    ports:
-      - "5173:5173"
-    depends_on:
-      - api
+    volumes: ["./frontend:/app"]
+    ports: ["5173:5173"]
+    depends_on: [api]
 
 volumes:
   minio_data:
   postgres_data:
   localai_data:
-

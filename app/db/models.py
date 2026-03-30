@@ -18,18 +18,28 @@ class DocumentExtraction(Base):
     id                  = Column(Integer, primary_key=True, index=True)
     task_id             = Column(UUID(as_uuid=True), unique=True, index=True, nullable=False)
     act_type            = Column(String(255), nullable=True)   # dsactocorta, ej: BI34
+    expediente_id       = Column(String(255), nullable=True)   # ID del expediente o nombre de archivo
     form_code           = Column(String(255), nullable=True)   # lldeffrmpre de cfdeffrmpre
     pdf_minio_path      = Column(String(1024), nullable=True)  # ruta del documento en MinIO
     json_minio_path     = Column(String(1024), nullable=True)  # ruta del esquema JSON en MinIO
     markdown_minio_path = Column(String(1024), nullable=True)  # ruta del markdown generado por Docling
-    additional_docs      = Column(JSONB, nullable=True)  # Lista de rutas MinIO para documentos adicionales
+    additional_docs     = Column(JSONB, nullable=True)  # Lista de rutas MinIO para documentos adicionales
     parent_task_id      = Column(UUID(as_uuid=True), nullable=True)    # Referencia si se rehusó el markdown de otra tarea
     stage_current       = Column(String(100), nullable=True)   # etapa activa en el worker
     status              = Column(String(50), default="PENDING_CELERY")
-    extracted_data      = Column(JSONB, nullable=True)  # JSON completo con todos los UUID y campos del sistema Java
-    simplified_json     = Column(JSONB, nullable=True)  # JSON reducido { "label": "value", ... } para validación rápida
-    started_at          = Column(DateTime(timezone=True), nullable=True) # Fecha real de inicio en el worker
-    total_duration_s    = Column(Float, nullable=True) # Duración total en segundos
+    extracted_data      = Column(JSONB, nullable=True)  # JSON completo
+    simplified_json     = Column(JSONB, nullable=True)  # JSON reducido
+    
+    # --- Métricas de rendimiento y metadatos ---
+    page_count          = Column(Integer, default=0)
+    llm_provider        = Column(String(50), nullable=True)
+    gpu_model           = Column(String(100), nullable=True)
+    docling_duration_s  = Column(Float, nullable=True)
+    ai_duration_s       = Column(Float, nullable=True)
+    total_duration_s    = Column(Float, nullable=True)
+    error_message       = Column(Text, nullable=True)
+
+    started_at          = Column(DateTime(timezone=True), nullable=True) # Fecha real de inicio
     created_at          = Column(DateTime(timezone=True), server_default=func.now())
     updated_at          = Column(DateTime(timezone=True), onupdate=func.now())
 
