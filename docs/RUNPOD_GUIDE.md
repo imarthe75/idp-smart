@@ -67,15 +67,24 @@ Para correr ambos modelos en paralelo en la misma tarjeta gráfica, debes usar u
 4. Haz clic en **Customize Deployment** o en la edición del pod y configura estrictamente lo siguiente:
 
    - **Image:** `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`
-   - **Container Start Command:** Copia y pega exactamente este comando:
+   - **Container Start Command:** Comando definitivo + nginx (resuelve health check + URL estable):
      ```bash
-     bash -lc "pip install vllm qwen-vl-utils && vllm serve ibm-granite/granite-3.0-8b-instruct --port 8000 --gpu-memory-utilization 0.45 --max-model-len 8192 & vllm serve Qwen/Qwen2-VL-7B-Instruct-AWQ --port 8001 --gpu-memory-utilization 0.45 --max-model-len 4096 & wait"
+     bash -lc "sleep 10 && pip install vllm qwen-vl-utils && python -c \"from huggingface_hub import snapshot_download; snapshot_download('ibm-granite/granite-3.0-8b-instruct'); snapshot_download('cyankiwi/Qwen3.5-27B-AWQ-4bit')\" && export HF_HUB_OFFLINE=1 && export TRANSFORMERS_OFFLINE=1 && echo 'server{listen 8000;location = /{return 200 ok;add_header Content-Type text/plain;}location /{proxy_pass http://localhost:18000;proxy_read_timeout 600;proxy_buffering off;}}server{listen 8001;location = /{return 200 ok;add_header Content-Type text/plain;}location /{proxy_pass http://localhost:18001;proxy_read_timeout 600;proxy_buffering off;}}' > /etc/nginx/conf.d/vllm.conf && rm -f /etc/nginx/sites-enabled/default && nginx && (vllm serve ibm-granite/granite-3.0-8b-instruct --served-model-name ibm-granite/granite-3.0-8b-instruct --host 127.0.0.1 --port 18000 --gpu-memory-utilization 0.40 --max-model-len 4096 --enforce-eager & vllm serve cyankiwi/Qwen3.5-27B-AWQ-4bit --served-model-name cyankiwi/Qwen3.5-27B-AWQ-4bit --host 127.0.0.1 --port 18001 --gpu-memory-utilization 0.40 --max-model-len 4096 --enforce-eager & wait)"
      ```
    - **Expose HTTP Ports:** `8000, 8001`
    - **Volume Mount Path:** `/root/.cache/huggingface` (Vinculado a tu Network Volume `idp-models-cache`).
 
 > [!IMPORTANT]
-> **¿Por qué 0.45?** Una GPU L40S tiene 48GB. Sin este flag, el primer proceso intentará acaparar el 90% de la VRAM, dejando al segundo proceso sin memoria. Al usar `0.45`, cada modelo reserva aprox. 21.6GB, permitiendo que ambos coexistan perfectamente y no choquen. Al agregar `&& wait`, nos aseguramos de que el pod mantenga ambos procesos vivos.
+> **¿Por qué `HF_HUB_OFFLINE=1` y `TRANSFORMERS_OFFLINE=1`?** Al arrancar, vLLM intenta verificar la versión de los modelos contactando `huggingface.co`. Si el datacenter de RunPod tiene restricciones de DNS saliente (común en US-TX-3 y US-NC-1), esta verificación falla y los modelos nunca cargan a la GPU. Con estas variables en modo offline, vLLM carga directamente desde el caché local del Network Volume sin hacer ninguna petición a internet. **Requiere que los modelos ya estén descargados en el Network Volume** (el `pip install` inicial se encarga de esto al primer arranque).
+
+> [!NOTE]
+> **Secuencia de arranque esperada:**
+> 1. `sleep 10` → Espera a que la red interna del contenedor esté lista.
+> 2. `pip install vllm qwen-vl-utils` → Instala el motor de inferencia (~2-3 min en el primer arranque, instantáneo si ya está en el disco del contenedor).
+> 3. `export HF_HUB_OFFLINE=1` → Activa el modo sin internet para la carga de modelos.
+> 4. Ambos `vllm serve` arrancan **en paralelo** gracias al operador `&`.  
+> 5. `wait` mantiene el proceso vivo hasta que ambos modelos terminen de subir a la VRAM (~2-4 min dependiendo de la velocidad de lectura del Network Volume).
+> 6. El Pod pasa de **P8 (reposo)** a **P0 (carga)** cuando ambas APIs están listas en los puertos 8000 y 8001.
 
 5. Una vez que inicie el Pod, RunPod generará dos URLs basadas en los puertos expuestos:
    - `https://[POD_ID]-8000.proxy.runpod.net` (Portal para Granite)

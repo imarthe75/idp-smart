@@ -105,7 +105,6 @@ def get_llm():
                 temperature=settings.localai_temperature,
                 max_tokens=settings.localai_max_tokens,
                 timeout=settings.llm_runpod_timeout,
-                model_kwargs={"response_format": {"type": "json_object"}},
                 verbose=True
             )
         elif settings.llm_provider == "ollama":

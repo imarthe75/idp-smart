@@ -116,7 +116,7 @@ class Settings(BaseSettings):
 
     # ── Compatibilidad RunPod legacy ───────────────────────────────────────────
     llm_runpod_timeout: int = 600
-    llm_runpod_model: str = "granite-3.0-8b-instruct"
+    llm_runpod_model: str = "ibm-granite/granite-3.0-8b-instruct"
     docling_runpod_timeout: int = 600
     docling_runpod_max_retries: int = 3
     docling_runpod_fallback_to_local: bool = True

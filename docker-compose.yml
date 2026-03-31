@@ -78,63 +78,54 @@ services:
     depends_on: [valkey]
     restart: always
 
-  # --- TRABAJADORES NODO 0 (CPUs 0-23) | 4 Workers x 6 cores ---
-  worker_n0_1:
+  # --- ARQUITECTURA OPTIMIZADA: 4 Workers Potentes (12 cores / 11GB RAM cada uno) ---
+  worker_1:
     <<: *worker-base
-    container_name: idp_worker_n0_1
-    cpuset: "0-5"
-    environment: [OMP_NUM_THREADS=6]
+    container_name: idp_worker_1
+    cpuset: "0-11"
+    environment: [OMP_NUM_THREADS=12]
+    deploy:
+      resources:
+        limits:
+          memory: 11000M
 
-  worker_n0_2:
+  worker_2:
     <<: *worker-base
-    container_name: idp_worker_n0_2
-    cpuset: "6-11"
-    environment: [OMP_NUM_THREADS=6]
+    container_name: idp_worker_2
+    cpuset: "12-23"
+    environment: [OMP_NUM_THREADS=12]
+    deploy:
+      resources:
+        limits:
+          memory: 11000M
 
-  worker_n0_3:
+  worker_3:
     <<: *worker-base
-    container_name: idp_worker_n0_3
-    cpuset: "12-17"
-    environment: [OMP_NUM_THREADS=6]
+    container_name: idp_worker_3
+    cpuset: "24-35"
+    environment: [OMP_NUM_THREADS=12]
+    deploy:
+      resources:
+        limits:
+          memory: 11000M
 
-  worker_n0_4:
+  worker_4:
     <<: *worker-base
-    container_name: idp_worker_n0_4
-    cpuset: "18-23"
-    environment: [OMP_NUM_THREADS=6]
+    container_name: idp_worker_4
+    cpuset: "36-47"
+    environment: [OMP_NUM_THREADS=12]
+    deploy:
+      resources:
+        limits:
+          memory: 11000M
 
-  # --- TRABAJADORES NODO 1 (CPUs 24-47) | 4 Workers x 6 cores ---
-  worker_n1_1:
-    <<: *worker-base
-    container_name: idp_worker_n1_1
-    cpuset: "24-29"
-    environment: [OMP_NUM_THREADS=6]
-
-  worker_n1_2:
-    <<: *worker-base
-    container_name: idp_worker_n1_2
-    cpuset: "30-35"
-    environment: [OMP_NUM_THREADS=6]
-
-  worker_n1_3:
-    <<: *worker-base
-    container_name: idp_worker_n1_3
-    cpuset: "36-41"
-    environment: [OMP_NUM_THREADS=6]
-
-  worker_n1_4:
-    <<: *worker-base
-    container_name: idp_worker_n1_4
-    cpuset: "42-47"
-    environment: [OMP_NUM_THREADS=6]
-
-  localai:
-    image: localai/localai:latest
-    container_name: idp_localai
-    ports: ["8080:8080"]
-    environment: [THREADS=4, MODELS_PATH=/models]
-    volumes: ["./localai/models_clean:/models", "localai_data:/build"]
-    restart: always
+  # localai:
+  #   image: localai/localai:latest
+  #   container_name: idp_localai
+  #   ports: ["8080:8080"]
+  #   environment: [THREADS=4, MODELS_PATH=/models]
+  #   volumes: ["./localai/models_clean:/models", "localai_data:/build"]
+  #   restart: always
 
   frontend:
     image: node:lts
