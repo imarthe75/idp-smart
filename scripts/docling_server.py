@@ -83,5 +83,8 @@ async def process_document(payload: RunPodPayload):
             os.remove(tmp_path)
 
 if __name__ == "__main__":
-    # Escuchamos en 0.0.0.0:8000 para que el proxy de RunPod funcione correctamente
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Escuchamos en 127.0.0.1:8001. Nginx en el puerto 8000 actuará como proxy externo.
+    # Esto permite que RunPod vea un puerto 8000 "siempre vivo" y nosotros manejamos
+    # la lógica pesadamente en el 8001.
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run(app, host="127.0.0.1", port=port)
