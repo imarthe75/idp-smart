@@ -1,10 +1,10 @@
 <div align="center">
   <img src="logo_enterprise.png" width="180" alt="idp-smart enterprise logo">
   <h1>idp-smart: Intelligent Document Processing</h1>
-  <h3>Enterprise Edition 🚀 v3.3 Multi-Cloud</h3>
+  <h3>Enterprise Edition 🚀 v3.4 Multi-Acto</h3>
 </div>
 
-> **Motor de IA soberano para la extracción semántica y automática de documentos legales, optimizado para PostgreSQL 18, procesado Multimodal (Qwen2-VL + Granite 3.0) y soporte dinámico de GPU/CPU/Cloud (Azure, AWS, Google).**
+> **Motor de IA soberano para la extracción semántica y automática de documentos legales, optimizado para PostgreSQL 18, procesado Multimodal (Qwen2-VL) y Orquestación Multi-Acto (Multi-Cloud / Local).**
 
 ---
 

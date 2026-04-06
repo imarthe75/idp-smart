@@ -172,9 +172,8 @@ def _set_stage(task_id: str, stage: str, status: str = None):
         print(f"No se pudo actualizar stage_current a {stage}: {exc}")
 
 
-@celery_app.task(name="process_doc")
-@monitor_performance
-def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, skip_vision: bool = False):
+@celery_app.task(name="process_doc", bind=True, max_retries=10)
+def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_object: str, skip_vision: bool = False):
     """
     Pipeline principal coordinado.
     """
@@ -218,6 +217,12 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
                     ).fetchone()
                     if res_parent:
                         target_md_path = res_parent[0]
+                    
+                    # SI ES UNA TAREA SECUNDARIA Y NO HAY MARKDOWN TODAVÍA: REINTENTAR
+                    # Esto evita que dos tareas procesen el mismo OCR.
+                    if not target_md_path:
+                        logger.info(f"⏳ Tarea {task_id} es secundaria y espera a {parent_tid}. Reintentando en 20s...")
+                        raise self.retry(countdown=20)
 
             if target_md_path and skip_vision:
                 try:

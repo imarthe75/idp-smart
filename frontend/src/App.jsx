@@ -438,7 +438,7 @@ export default function App() {
   const [view, setView]             = useState('home') // 'home' | 'history'
   const [files, setFiles]           = useState([])
   const [actTypes, setActTypes]     = useState([])
-  const [selectedAct, setSelectedAct] = useState(null)
+  const [selectedActs, setSelectedActs] = useState([])
   const [loadingActs, setLoadingActs] = useState(true)
   const [actError, setActError]     = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -454,12 +454,12 @@ export default function App() {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowOptions(false)
-        if (selectedAct) setActSearch(selectedAct.display_label)
+        setActSearch('') 
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [selectedAct])
+  }, [])
 
   // Filtrado de actos
   const filteredActs = useMemo(() => {
@@ -488,15 +488,11 @@ export default function App() {
     }
   }
 
-  // Cargar catálogo de tipos de acto
   useEffect(() => {
     axios.get(`${API_BASE}/api/v1/forms`)
       .then(({ data }) => {
         setActTypes(data.acts || [])
-        if (data.acts?.length) {
-          setSelectedAct(data.acts[0])
-          setActSearch(data.acts[0].display_label)
-        }
+        // No auto-seleccionar para permitir multi-selección limpia
       })
       .catch(() => setActError('No se pudo conectar con la API para obtener los tipos de acto.'))
       .finally(() => setLoadingActs(false))
@@ -527,89 +523,70 @@ export default function App() {
   const [groupAsAddenda, setGroupAsAddenda] = useState(false)
 
   const handleSubmit = async () => {
-    if (!selectedAct || (files.length === 0 && !reusingDoc)) return
+    if (selectedActs.length === 0 || (files.length === 0 && !reusingDoc)) return
     setSubmitting(true)
 
-    // Obtener la configuración real de la forma desde el catálogo (antes era un mock vacío)
-    const formSchema = selectedAct.jsconfforma || { containers: [] }
+    // Juntar actos y códigos para envío masivo (multi-acto)
+    const actsToSend = selectedActs.map(a => a.dsactocorta).join(',')
+    const codesToSend = selectedActs.map(a => a.form_code).join(',')
     
-    // Aseguramos que el act_type y form_code coincidan con lo seleccionado
-    const jsonToUpload = {
-      ...formSchema,
-      act_type: selectedAct.dsactocorta,
-      form_code: selectedAct.form_code,
-    }
-    
-    const jsonBlob = new Blob([JSON.stringify(jsonToUpload)], { type: 'application/json' })
+    // El primer acto siempre sirve como ancla si no hay json_form.
+    // En multiacto, el backend buscará los demás en el catálogo automáticamente.
+    const fd = new FormData()
+    fd.append('act_type',  actsToSend)
+    fd.append('form_code', codesToSend)
+    if (customExpediente) fd.append('expediente_id', customExpediente)
 
     const results = []
+    
     if (reusingDoc) {
-      const fd = new FormData()
-      fd.append('act_type',  selectedAct.dsactocorta)
-      fd.append('form_code', String(selectedAct.form_code))
-      fd.append('json_form', jsonBlob, 'form.json')
       fd.append('reuse_task_id', reusingDoc.taskId)
-      if (customExpediente) fd.append('expediente_id', customExpediente)
       try {
         const { data } = await axios.post(`${API_BASE}/api/v1/process`, fd)
-        results.push({
-          taskId:   data.task_id,
-          fileName: reusingDoc.fileName,
-          actLabel: selectedAct.display_label,
+        const ids = data.task_ids || [data.task_id]
+        ids.forEach((tid, i) => {
+          results.push({
+            taskId: tid,
+            fileName: reusingDoc.fileName,
+            actLabel: selectedActs[i]?.display_label || actsToSend,
+          })
         })
       } catch (err) {
         alert(`Error al reutilizar: ${err.message}`)
       }
-    } else if (groupAsAddenda && files.length > 1) {
-      const fd = new FormData()
-      fd.append('act_type',  selectedAct.dsactocorta)
-      fd.append('form_code', String(selectedAct.form_code))
-      fd.append('json_form', jsonBlob, 'form.json')
-      fd.append('document',  files[0]) // primer archivo es el principal
-      if (customExpediente) fd.append('expediente_id', customExpediente)
-      for (let i = 1; i < files.length; i++) {
-        fd.append('additional_documents', files[i])
-      }
-      try {
-        const { data } = await axios.post(`${API_BASE}/api/v1/process`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-        results.push({
-          taskId:   data.task_id,
-          fileName: `${files[0].name} +${files.length-1} adendas`,
-          actLabel: selectedAct.display_label,
-        })
-      } catch (err) {
-        alert(`Error al procesar lote: ${err.message}`)
-      }
     } else {
-      for (const file of files) {
-        const fd = new FormData()
-        fd.append('act_type',  selectedAct.dsactocorta)
-        fd.append('form_code', String(selectedAct.form_code))
-        fd.append('json_form', jsonBlob, 'form.json')
-        fd.append('document',  file)
-        if (customExpediente) fd.append('expediente_id', customExpediente)
+      // Caso normal: Un solo documento o con adendas
+      if (files.length > 0) {
+        fd.append('document', files[0])
+        if (groupAsAddenda && files.length > 1) {
+          for (let i = 1; i < files.length; i++) {
+             fd.append('additional_documents', files[i])
+          }
+        }
+        
         try {
           const { data } = await axios.post(`${API_BASE}/api/v1/process`, fd, {
             headers: { 'Content-Type': 'multipart/form-data' },
           })
-          results.push({
-            taskId:   data.task_id,
-            fileName: file.name,
-            actLabel: selectedAct.display_label,
+          const ids = data.task_ids || [data.task_id]
+          ids.forEach((tid, i) => {
+            results.push({
+              taskId: tid,
+              fileName: groupAsAddenda && files.length > 1 ? `${files[0].name} +${files.length-1} adendas` : files[0].name,
+              actLabel: selectedActs[i]?.display_label || actsToSend,
+            })
           })
         } catch (err) {
-          console.error(`Error enviando ${file.name}:`, err)
+          console.error(`Error enviando:`, err)
           const msg = err.response?.data?.detail 
             ? JSON.stringify(err.response.data.detail) 
             : (err.response?.data?.error || err.message)
-          alert(`Error al procesar "${file.name}":\n${msg}`)
+          alert(`Error al procesar: \n${msg}`)
         }
       }
     }
 
-    // Correcion: solo monitorear tareas si tienen un taskId valido
+    // Monitorear TODAS las tareas creadas
     const validResults = (results || []).filter(r => r.taskId && r.taskId !== 'undefined')
     if (validResults.length > 0) {
       setTasks(prev => [...validResults, ...prev])
@@ -617,6 +594,8 @@ export default function App() {
     setFiles([])
     setReusingDoc(null)
     setCustomExpediente('')
+    setSelectedActs([])
+    setActSearch('')
     setSubmitting(false)
   }
 
@@ -700,16 +679,21 @@ export default function App() {
                           filteredActs.map(act => (
                             <div
                               key={act.form_code}
-                              className={`option-item ${selectedAct?.form_code === act.form_code ? 'selected' : ''}`}
+                              className={`option-item ${selectedActs.some(s => s.form_code === act.form_code) ? 'selected' : ''}`}
                               onClick={() => {
-                                setSelectedAct(act)
-                                setActSearch(act.display_label)
-                                setShowOptions(false)
+                                if (selectedActs.some(s => s.form_code === act.form_code)) {
+                                  setSelectedActs(prev => prev.filter(s => s.form_code !== act.form_code))
+                                } else {
+                                  setSelectedActs(prev => [...prev, act])
+                                }
+                                setActSearch('') 
+                                // setShowOptions(false) // mantenemos abierto para seleccionar más
                               }}
                             >
                               <div className="option-content">
                                 <span className="option-code-pill">{act.dsactocorta}</span>
                                 <span className="option-text">{act.dsacto}</span>
+                                {selectedActs.some(s => s.form_code === act.form_code) && <span style={{marginLeft:'auto'}}>✓</span>}
                               </div>
                             </div>
                           ))
@@ -718,10 +702,19 @@ export default function App() {
                         )}
                       </div>
                     )}
-                    {selectedAct && !showOptions && (
-                      <p className="act-sub">
-                        <span className="current-selection-label">Seleccionado:</span> {selectedAct.dsactocorta} · {selectedAct.dsacto}
-                      </p>
+                    
+                    {selectedActs.length > 0 && (
+                      <div className="selected-acts-area">
+                        <span className="selected-acts-count">Actos seleccionados ({selectedActs.length})</span>
+                        <div className="selected-acts-list">
+                          {selectedActs.map(act => (
+                            <div key={act.form_code} className="selected-act-tag">
+                              <span>{act.dsactocorta}</span>
+                              <button className="remove-tag" onClick={() => setSelectedActs(prev => prev.filter(s => s.form_code !== act.form_code))}>✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}

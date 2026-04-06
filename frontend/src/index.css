@@ -426,3 +426,66 @@ body {
 .engine-chip.google { background: #4285f4; color: white; }
 .engine-chip.runpod { background: #6b21a8; color: white; }
 .engine-chip.local { background: #475569; color: white; }
+
+/* ── Multi-Act Select Styles ───────────────────────────── */
+.selected-acts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 4px 0;
+}
+
+.selected-act-tag {
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  color: var(--primary);
+  border-radius: 8px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  animation: scaleIn 0.2s ease-out;
+  transition: all 0.15s;
+}
+
+.selected-act-tag:hover {
+  background: #dbeafe;
+  border-color: var(--primary);
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.selected-act-tag .remove-tag {
+  background: none;
+  border: none;
+  color: #93c5fd;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.selected-act-tag .remove-tag:hover {
+  color: var(--error);
+  background: #fef2f2;
+}
+
+.selected-acts-count {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-top: 12px;
+  display: block;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}

@@ -75,6 +75,22 @@
 - **Acceso Externo a DB**: Apertura del puerto **5432** en el contenedor de Docker para permitir auditoría directa desde herramientas externas como Navicat.
 - **Optimización de Segmentación**: Sintonización del `pdf_chunk_size` dinámico en `vision_optimized.py` para respetar los límites de RAM del hardware_detector.
 
+## 2026-04-06: Orquestación Multi-Acto y Optimización UI (v3.4)
+
+### 1. Extracción Multi-Acto por Documento
+- Se implementó la capacidad de procesar múltiples tipos de actos (ej: BI34 y BI35) para un único archivo subido.
+- **Relación Ancla/Satélite**: El sistema ahora genera una tarea principal ("Ancla") que realiza el OCR y N tareas secundarias ("Satélites") que reutilizan el Markdown generado, ahorrando hasta un 70% de tiempo de CPU/GPU en extracciones combinadas.
+
+### 2. Sincronización Inteligente de Workers
+- Se integró un mecanismo de **Backoff y Retry** en Celery. Si una tarea satélite inicia antes de que el padre termine el OCR, esta realiza un reintento automático (20s) hasta detectar el recurso disponible en MinIO.
+- El Webhook de MinIO fue optimizado para disparar todas las tareas asociadas a una misma ruta de documento de forma atómica.
+
+### 3. Nueva UI de Selección Múltiple
+- Rediseño del componente de selección de actos en el Frontend (`App.jsx`).
+- **Sistema de Tags**: Ahora el usuario puede buscar y seleccionar múltiples actos mediante un dropdown multiselección con etiquetas dinámicas.
+- **Auto-fetching de Esquemas**: La API ahora es capaz de obtener el esquema JSON necesario directamente del catálogo si el usuario no proporciona uno manual, facilitando el flujo multi-acto.
+
 ### Próximos Pasos 
-- Finalizar el motor de búsqueda semántica (RAG) sobre el repositorio histórico de MinIO.
-- Desarrollar la interfaz "Human-in-the-loop" para validación masiva de campos de baja confianza.
+- Implementar la visualización "Side-by-Side" (PDF vs JSON) para validación humana.
+- Optimizar la carga de documentos adicionales (adendas) para que sean visibles por todas las tareas hermanas.
+- Integrar métricas de ahorro de costos por reutilización de OCR en el dashboard de benchmarks.

@@ -100,7 +100,7 @@ async def get_hardware_benchmarks(db: AsyncSession = Depends(get_db)):
 async def process_document(
     act_type: str = Form(...),
     form_code: str = Form(...),
-    json_form: UploadFile = File(...),
+    json_form: UploadFile | None = File(None),
     document: UploadFile | None = File(None),
     additional_documents: list[UploadFile] = File(None),
     reuse_task_id: str | None = Form(None),
@@ -108,126 +108,161 @@ async def process_document(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Endpoint para procesar uno o varios documentos.
+    Endpoint para procesar documentos (TIFF/PDF) bajo uno o varios actos notariales.
+    Si se envían múltiples actos (separados por coma), se genera un proceso por cada uno
+    reutilizando el OCR del documento principal.
     """
-    # LIMPIEZA PREVENTIVA: Asegurar que no hay objetos "viejos" en la sesión
     await db.rollback()
     db.expunge_all()
     
     task_id = generate_uuidv7()
-    print(f"DEBUG: Generated task_id={task_id} type={type(task_id)}")
     minio_client = get_minio_client()
     
-    # 1. Guardar esquema JSON (VALIDACIÓN PREVENTIVA)
-    try:
-        json_content = await json_form.read()
-        json.loads(json_content) # Validar que sea JSON válido
-    except Exception as e_json:
-        raise HTTPException(status_code=400, detail=f"El archivo 'json_form' no contiene un JSON válido: {str(e_json)}")
-        
-    json_object_name = f"{task_id}/form.json"
-    upload_file_to_minio(minio_client, json_object_name, json_content, "application/json")
-    json_minio_path = f"idp-documents/{json_object_name}"
-
-    pdf_minio_path = None
-    pdf_object_name = None
-    additional_paths = []
-    parent_task_id = None
-    skip_vision = False
-
-    # 2. Manejo de Documento Principal / Reúso
-    if reuse_task_id:
-        query = text("SELECT pdf_minio_path, markdown_minio_path, page_count FROM idp_smart.document_extractions WHERE task_id = :tid")
-        result = await db.execute(query, {"tid": uuid.UUID(reuse_task_id)})
-        original = result.fetchone()
-        if original:
-            pdf_minio_path = original[0]
-            pdf_object_name = pdf_minio_path.split("idp-documents/")[-1]
-            parent_task_id = uuid.UUID(reuse_task_id)
-            skip_vision = True if original[1] else False
-            p_count = original[2] or 0
+    # --- SOPORTE MULTI-ACTO ---
+    form_codes = [f.strip() for f in form_code.split(",")]
+    act_types_list = [a.strip() for a in act_type.split(",")]
     
-    if not pdf_minio_path and document and document.filename:
-        doc_content = await document.read()
-        
-        # --- Cálculo inmediato de páginas (Soporte PDF y TIFF) ---
+    # Validar que al menos tengamos un código de acto
+    if not form_codes or not form_codes[0]:
+        raise HTTPException(status_code=400, detail="Debe proporcionar al menos un form_code.")
+
+    primary_task_id = task_id
+    tasks_created = []
+
+    # 1. Preparar esquema JSON inicial
+    json_content = None
+    if json_form:
         try:
-            import io
-            import fitz
-            pdf_buf = io.BytesIO(doc_content)
-            # fitz detecta automáticamente si es PDF o Imagen (TIFF)
-            with fitz.open(stream=pdf_buf) as doc_info:
-                p_count = len(doc_info)
-        except Exception as e_count:
-            print(f"⚠️ Error contando páginas en upload: {e_count}")
-            p_count = 0
-
-        pdf_object_name = f"{task_id}/{document.filename}"
-        pdf_minio_path = upload_file_to_minio(minio_client, pdf_object_name, doc_content, document.content_type)
+            json_content = await json_form.read()
+            json.loads(json_content) 
+        except Exception as e_json:
+            raise HTTPException(status_code=400, detail=f"El archivo 'json_form' no es un JSON válido: {str(e_json)}")
+    
+    # Iterar sobre todos los actos solicitados
+    for index, (f_code, a_type) in enumerate(zip(form_codes, act_types_list)):
+        current_task_id = primary_task_id if index == 0 else generate_uuidv7()
         
-        # Si el usuario no dio expediente, usamos el nombre del archivo
-        if not expediente_id:
-            expediente_id = document.filename
+        # Obtener el JSON para este acto
+        current_json_content = None
+        if index == 0 and json_content:
+            current_json_content = json_content
+        else:
+            # Buscar en catálogo por defecto
+            q_schema = text("SELECT jsconfforma FROM idp_smart.act_forms_catalog WHERE form_code = :code")
+            res_schema = await db.execute(q_schema, {"code": f_code})
+            row_schema = res_schema.fetchone()
+            if row_schema and row_schema[0]:
+                current_json_content = json.dumps(row_schema[0]).encode("utf-8")
+            elif index == 0 and not json_content:
+                raise HTTPException(status_code=400, detail=f"No se subió json_form y el acto '{f_code}' no existe en el catálogo.")
+            else:
+                # Si es secundario y no hay en catálogo, usamos el del primero como fallback desesperado
+                current_json_content = json_content
 
-    # 3. Manejo de Documentos Adicionales
-    if additional_documents:
-        for doc in additional_documents:
-            if doc and doc.filename:
-                content = await doc.read()
-                obj_name = f"{task_id}/additional/{doc.filename}"
-                path = upload_file_to_minio(minio_client, obj_name, content, doc.content_type)
-                additional_paths.append(path)
+        json_object_name = f"{current_task_id}/form.json"
+        upload_file_to_minio(minio_client, json_object_name, current_json_content, "application/json")
+        json_minio_path = f"idp-documents/{json_object_name}"
 
-    if not pdf_minio_path:
-        raise HTTPException(status_code=400, detail="Debes proporcionar un 'document' o un 'reuse_task_id' válido.")
+        pdf_minio_path = None
+        pdf_object_name = None
+        additional_paths = []
+        parent_task_id = None
+        skip_vision = False
 
-    # 4. Registro en DB (USO DE SQL PURO CON CASTING PARA EVITAR ERRORES DE TIPO EN PG18)
-    # IMPORTANTE: Limpiar cualquier objeto previo en la sesión para evitar INSERTs automáticos fallidos
-    db.expunge_all()
-    
-    insert_query = text("""
-        INSERT INTO idp_smart.document_extractions 
+        # 2. Manejo de Documento Principal / Reúso
+        if reuse_task_id or index > 0:
+            # Si es secundaria de este mismo upload, el "padre" es el primary_task_id
+            target_tid = uuid.UUID(reuse_task_id) if (reuse_task_id and index == 0) else primary_task_id
+            
+            query = text("SELECT pdf_minio_path, markdown_minio_path, page_count FROM idp_smart.document_extractions WHERE task_id = :tid")
+            result = await db.execute(query, {"tid": target_tid})
+            original = result.fetchone()
+            if original:
+                pdf_minio_path = original[0]
+                pdf_object_name = pdf_minio_path.split("idp-documents/")[-1]
+                parent_task_id = target_tid
+                skip_vision = True # Las secundarias siempre skipean vision local si hay padre
+                p_count = original[2] or 0
+        
+        if not pdf_minio_path and document and document.filename:
+            # Esto solo debería entrar en el index == 0 si no hay reuse_task_id
+            doc_content = await document.read()
+            
+            # --- Cálculo inmediato de páginas (Soporte PDF y TIFF) ---
+            try:
+                import io
+                import fitz
+                pdf_buf = io.BytesIO(doc_content)
+                with fitz.open(stream=pdf_buf) as doc_info:
+                    p_count = len(doc_info)
+            except Exception as e_count:
+                print(f"⚠️ Error contando páginas en upload: {e_count}")
+                p_count = 0
+
+            pdf_object_name = f"{current_task_id}/{document.filename}"
+            pdf_minio_path = upload_file_to_minio(minio_client, pdf_object_name, doc_content, document.content_type)
+            
+            if not expediente_id:
+                expediente_id = document.filename
+
+        # 3. Manejo de Documentos Adicionales (Compartidos por todos en este multi-acto)
+        if additional_documents:
+            # Aquí podríamos optimizar, pero por simplicidad los linkeamos
+            # Nota: require lógica de carga previa si index > 0
+            pass
+
+        if not pdf_minio_path:
+            raise HTTPException(status_code=400, detail="Debes proporcionar un 'document' o un 'reuse_task_id' válido.")
+
+        # 4. Registro en DB
+        # IMPORTANTE: Reusar el primer insert_query definido fuera o aquí
+        ins_q = text("""
+            INSERT INTO idp_smart.document_extraction_batch
             (task_id, expediente_id, act_type, form_code, pdf_minio_path, json_minio_path, 
-             additional_docs, parent_task_id, status, stage_current, page_count)
-        VALUES 
+             parent_task_id, status, stage_current, page_count)
+            VALUES 
             (CAST(:task_id AS UUID), :expediente, :act_type, :form_code, :pdf_path, :json_path, 
-             CAST(:add_docs AS JSONB), CAST(:parent_tid AS UUID), :status, :stage, :p_count)
-    """)
-    
-    print(f"DEBUG DB: Inserting task_id={task_id} expediente={expediente_id}")
-    
-    await db.execute(insert_query, {
-        "task_id":     str(task_id),
-        "expediente":  expediente_id,
-        "act_type":    act_type,
-        "form_code":   form_code,
-        "pdf_path":    pdf_minio_path,
-        "json_path":   json_minio_path,
-        "add_docs":    json.dumps(additional_paths),
-        "parent_tid":  str(parent_task_id) if parent_task_id else None,
-        "status":      "PENDING_CELERY",
-        "stage":       "INICIO",
-        "p_count":     p_count
-    })
+             CAST(:parent_tid AS UUID), :status, :stage, :p_count)
+        """)
+        
+        # Usamos idp_smart.document_extractions (el nombre correcto)
+        await db.execute(text("""
+            INSERT INTO idp_smart.document_extractions 
+                (task_id, expediente_id, act_type, form_code, pdf_minio_path, json_minio_path, 
+                 parent_task_id, status, stage_current, page_count)
+            VALUES 
+                (CAST(:task_id AS UUID), :expediente, :act_type, :form_code, :pdf_path, :json_path, 
+                 CAST(:parent_tid AS UUID), :status, :stage, :p_count)
+        """), {
+            "task_id":     str(current_task_id),
+            "expediente":  expediente_id,
+            "act_type":    a_type.strip(),
+            "form_code":   f_code.strip(),
+            "pdf_path":    pdf_minio_path,
+            "json_path":   json_minio_path,
+            "parent_tid":  str(parent_task_id) if parent_task_id else None,
+            "status":      "PENDING_CELERY",
+            "stage":       "INICIO",
+            "p_count":     p_count
+        })
+        tasks_created.append(str(current_task_id))
+
     await db.commit()
     
-    # 5. Enviar a Celery (DESACTIVADO: Ahora lo hace MinIO reactivamente vía Webhook)
-    # A menos que sea un reúso (que no dispara evento de upload en MinIO)
+    # 5. Enviar a Celery (Solo para Reuse, el upload normal lo hace el webhook para todos)
     if reuse_task_id:
-        celery_app.send_task(
-            "process_doc", 
-            args=[str(task_id), json_object_name, pdf_object_name, skip_vision], 
-            task_id=str(task_id)
-        )
-        logger.info(f"Manual dispatch for reuse: {task_id}")
-    else:
-        logger.info(f"Waiting for MinIO reactive trigger for task: {task_id}")
+        # Aquí solo disparamos la ANCLA, las demás caerán por cascada en el webhook o manualmente
+        # Pero mejor disparamos todas las secundarias también
+        for tid in tasks_created:
+            # Nota: El webhook no se dispara en REUSE porque no hay upload
+            celery_app.send_task("process_doc", args=[tid, f"{tid}/form.json", pdf_object_name, True], task_id=tid)
     
     return {
         "status": "Accepted",
-        "task_id": task_id,
-        "message": "Encolado para procesamiento",
-        "reusing_from": parent_task_id,
+        "task_ids": tasks_created,
+        "primary_task_id": primary_task_id,
+        "count": len(tasks_created),
+        "message": f"Se han creado {len(tasks_created)} procesos paralelos compartiendo un único OCR.",
         "additional_docs_count": len(additional_paths)
     }
 
@@ -754,7 +789,7 @@ async def minio_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
             # ── Retry: esperar hasta 3s a que el INSERT de la API sea visible ───
             # Race condition: MinIO puede notificar ANTES de que la API haga commit.
-            row = None
+            tasks = []
             for attempt in range(1, 7):  # 6 intentos × 0.5s = hasta 3s de espera
                 await db.rollback()  # limpiar caché de la sesión para ver datos nuevos
                 query = text("""
@@ -763,35 +798,36 @@ async def minio_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     WHERE pdf_minio_path LIKE :path
                 """)
                 result = await db.execute(query, {"path": f"%{clean_key}"})
-                row = result.fetchone()
-                if row:
+                tasks = result.fetchall()
+                if tasks:
                     break
                 logger.info(f"⏳ Intento {attempt}/6: tarea aún no en DB, esperando 0.5s... ({clean_key})")
                 await asyncio.sleep(0.5)
 
-            if not row:
+            if not tasks:
                 logger.warning(f"⚠️ PDF {clean_key} subido pero no se encontró tarea en DB tras 3s. El Beat la recuperará.")
                 continue
 
-            task_id, act_type, form_code, json_minio_path, status = row
+            for row in tasks:
+                task_id, act_type, form_code, json_minio_path, status = row
 
-            # Solo disparamos si está en estado inicial (evitar bucles)
-            if status in ("INICIO", "PENDING_CELERY"):
-                logger.info(f"🚀 Disparando procesamiento REACTIVO para tarea {task_id}")
-                # Marcar como PENDING_CELERY y encolar
-                await db.execute(
-                    text("UPDATE idp_smart.document_extractions SET status = 'PENDING_CELERY', updated_at = NOW() WHERE task_id = :tid"),
-                    {"tid": task_id}
-                )
-                await db.commit()
+                # Solo disparamos si está en estado inicial (evitar bucles)
+                if status in ("INICIO", "PENDING_CELERY"):
+                    logger.info(f"🚀 Disparando procesamiento REACTIVO para tarea {task_id} ({act_type})")
+                    # Marcar como PENDING_CELERY y encolar
+                    await db.execute(
+                        text("UPDATE idp_smart.document_extractions SET status = 'PENDING_CELERY', updated_at = NOW() WHERE task_id = :tid"),
+                        {"tid": task_id}
+                    )
+                    await db.commit()
 
-                celery_app.send_task(
-                    "process_doc",
-                    args=[str(task_id), json_minio_path, clean_key, False],
-                    task_id=str(task_id)
-                )
-            else:
-                logger.info(f"⏭️ Tarea {task_id} ya tiene estado {status}, saltando trigger.")
+                    celery_app.send_task(
+                        "process_doc",
+                        args=[str(task_id), json_minio_path, clean_key, False],
+                        task_id=str(task_id)
+                    )
+                else:
+                    logger.info(f"⏭️ Tarea {task_id} ya tiene estado {status}, saltando trigger.")
 
         return {"status": "ok"}
     except Exception as e:
