@@ -28,6 +28,7 @@ services:
   db:
     image: postgres:18
     container_name: idp_db
+    ports: ["5432:5432"]
     environment:
       - POSTGRES_USER=admin_user
       - POSTGRES_PASSWORD=Ad54=Tx91.Vm+23_Qr78

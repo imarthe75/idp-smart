@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     local_api_url: str = "http://localhost:8000"
     local_llm_model: str = "granite-3.0-8b-instruct"
     local_llm_timeout: int = 300
+    proxy_timeout_s: int = 600          # Agregado para agent.py
 
     # ── RunPod Lifecycle Management ────────────────────────────────────────────
     runpod_enabled: bool = False
@@ -102,7 +103,8 @@ class Settings(BaseSettings):
     vision_allow_gpu: bool = True
     vision_gpu_monitor_interval: int = 5
     vision_gpu_memory_threshold_mb: float = 512.0
-    vision_skip_local_ocr: bool = False  # Si es True, no usa Docling, solo Multimodal Cloud
+    vision_skip_local_ocr: bool = False
+    vision_use_cache: bool = True  # Si es True, no usa Docling, solo Multimodal Cloud
 
     # ── Ensemble (legacy) ─────────────────────────────────────────────────────
     use_ensemble: bool = False
@@ -122,7 +124,29 @@ class Settings(BaseSettings):
     docling_runpod_max_retries: int = 3
     docling_runpod_fallback_to_local: bool = True
 
-    # ── Celery ─────────────────────────────────────────────────────────────────
+    # ── Ollama ─────────────────────────────────────────────────────────────────
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "granite3.1-dense:8b"
+
+    # ── Cloud OCR Configuration ────────────────────────────────────────────────
+    # Selector Maestro: docling | google | aws | azure
+    ocr_engine: str = "docling"
+
+    # Google Document AI
+    google_docai_project_id: str = ""
+    google_docai_location: str = "us"
+    google_docai_processor_id: str = ""
+    
+    # AWS Textract
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "us-east-1"
+    
+    # Azure Document Intelligence (Layout)
+    azure_doc_endpoint: str = ""
+    azure_doc_key: str = ""
+
+    # ── Celery & Infra ─────────────────────────────────────────────────────────
     worker_concurrency: int = 1
 
     @property
@@ -136,22 +160,6 @@ class Settings(BaseSettings):
         if self.llm_provider in ("runpod", "vllm", "local"):
             return self.local_llm_model
         return "unknown"
-
-    # ── [OCR ENGINES] Soporte Multinivel ──────────────────────────────────────
-    ocr_engine: str = "docling" # docling | google_doc_ai | aws_textract | azure_ai_vision
-    
-    # [AWS Textract]
-    aws_access_key: str = ""
-    aws_secret_key: str = ""
-    aws_region: str = "us-east-1"
-    
-    # [Google Document AI]
-    google_application_credentials: str = "" # Path a JSON o JSON string
-    google_doc_ai_processor_id: str = ""
-    
-    # [Azure Document Intelligence]
-    azure_ocr_endpoint: str = ""
-    azure_ocr_key: str = ""
 
     @property
     def database_url(self) -> str:

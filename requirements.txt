@@ -27,6 +27,11 @@ psycopg2-binary==2.9.10
 sqlalchemy==2.0.40
 minio==7.2.15
 
+# --- Cloud OCR Integrations ---
+google-cloud-documentai>=2.20.0
+boto3>=1.34.0
+azure-ai-formrecognizer>=3.3.0
+
 # --- LLM Integrations ---
 langchain==0.3.21
 langchain-openai==0.3.5

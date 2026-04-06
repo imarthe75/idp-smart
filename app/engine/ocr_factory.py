@@ -196,17 +196,19 @@ class DoclingEngine(BaseOCREngine):
 class GoogleDocAIEngine(BaseOCREngine):
     """
     Usa Google Document AI para extracción en la nube.
-    Variables requeridas:
-      GOOGLE_APPLICATION_CREDENTIALS, GOOGLE_DOCAI_PROJECT_ID,
-      GOOGLE_DOCAI_LOCATION, GOOGLE_DOCAI_PROCESSOR_ID
     """
 
     def __init__(self):
         from google.cloud import documentai
+        
+        # Validar configuración
+        if not settings.google_docai_project_id or not settings.google_docai_processor_id:
+            logger.warning("⚠️ Google DocAI mal configurado. Revisa GOOGLE_DOCAI_PROJECT_ID.")
+            raise ValueError("Configuración de Google DocAI incompleta.")
 
-        self._project_id = os.environ["GOOGLE_DOCAI_PROJECT_ID"]
-        self._location = os.environ.get("GOOGLE_DOCAI_LOCATION", "us")
-        self._processor_id = os.environ["GOOGLE_DOCAI_PROCESSOR_ID"]
+        self._project_id = settings.google_docai_project_id
+        self._location = settings.google_docai_location or "us"
+        self._processor_id = settings.google_docai_processor_id
         self._client = documentai.DocumentProcessorServiceClient()
         self._processor_name = self._client.processor_path(
             self._project_id, self._location, self._processor_id
@@ -222,14 +224,17 @@ class GoogleDocAIEngine(BaseOCREngine):
         )
         result = self._client.process_document(request=request)
         doc = result.document
+        
+        # Extracción estructurada básica
         paragraphs = [
             block.layout.text_anchor.content
             for page in doc.pages
             for block in page.blocks
         ] if doc.pages else []
+        
         md = "\n\n".join(paragraphs) if paragraphs else doc.text
         pages = len(doc.pages) if doc.pages else 1
-        logger.info("Google DocAI: %d páginas, %d chars.", pages, len(md))
+        logger.info("✅ Google DocAI: %d páginas procesadas.", pages)
         return md, pages, "CLOUD:GoogleDocAI"
 
 
@@ -239,25 +244,80 @@ class GoogleDocAIEngine(BaseOCREngine):
 class AWSTextractEngine(BaseOCREngine):
     """
     Usa AWS Textract para extracción en la nube.
-    Variables requeridas: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
     """
 
     def __init__(self):
         import boto3
+        
+        if not settings.aws_access_key_id or not settings.aws_secret_access_key:
+            logger.warning("⚠️ AWS Credentials faltantes para Textract.")
+            raise ValueError("Configuración de AWS incompleta.")
 
-        self._client = boto3.client("textract")
+        self._client = boto3.client(
+            "textract",
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
+            region_name=settings.aws_region or "us-east-1"
+        )
 
     def extract_markdown(self, document: DocumentInput) -> OCRResult:
         raw = document if isinstance(document, bytes) else Path(document).read_bytes()
-        response = self._client.detect_document_text(Document={"Bytes": raw})
-        lines = [
-            block["Text"]
-            for block in response.get("Blocks", [])
-            if block["BlockType"] == "LINE"
-        ]
-        md = "\n\n".join(lines)
-        logger.info("AWS Textract: %d chars.", len(md))
-        return md, 1, "CLOUD:AWSTextract"
+        
+        # DetectDocumentText solo soporta una página si se pasa por Bytes directamente
+        # Para multipágina se requiere S3, pero aquí simulamos flujo síncrono
+        try:
+            response = self._client.detect_document_text(Document={"Bytes": raw})
+            lines = [
+                block["Text"]
+                for block in response.get("Blocks", [])
+                if block["BlockType"] == "LINE"
+            ]
+            md = "\n\n".join(lines)
+            logger.info("✅ AWS Textract procesado exitosamente (Single-Page Sync Mode).")
+            return md, 1, "CLOUD:AWSTextract"
+        except Exception as e:
+            logger.error(f"❌ Error en AWS Textract: {e}")
+            raise
+
+
+# ===========================================================================
+# Motor AZURE DOCUMENT INTELLIGENCE (cloud)
+# ===========================================================================
+class AzureDocAIEngine(BaseOCREngine):
+    """
+    Usa Azure Document Intelligence (Layout model) para extracción con tablas.
+    """
+
+    def __init__(self):
+        from azure.ai.formrecognizer import DocumentAnalysisClient
+        from azure.core.credentials import AzureKeyCredential
+
+        if not settings.azure_doc_endpoint or not settings.azure_doc_key:
+            logger.warning("⚠️ Azure Endpoint o Key faltantes.")
+            raise ValueError("Configuración de Azure incompleta.")
+
+        self._client = DocumentAnalysisClient(
+            endpoint=settings.azure_doc_endpoint,
+            credential=AzureKeyCredential(settings.azure_doc_key)
+        )
+
+    def extract_markdown(self, document: DocumentInput) -> OCRResult:
+        raw = document if isinstance(document, bytes) else Path(document).read_bytes()
+        
+        poller = self._client.begin_analyze_document("prebuilt-layout", raw)
+        result = poller.result()
+
+        md_lines = []
+        for page in result.pages:
+            for line in page.lines:
+                md_lines.append(line.content)
+        
+        # Tablas (Opcional: Agregar lógica de conversión a Markdown Table si es crítico)
+        # Por ahora extraemos el texto plano de forma robusta
+        md = "\n\n".join(md_lines)
+        pages = len(result.pages)
+        logger.info("✅ Azure DocAI: %d páginas procesadas.", pages)
+        return md, pages, "CLOUD:AzureDocAI"
 
 
 # ===========================================================================
@@ -265,27 +325,29 @@ class AWSTextractEngine(BaseOCREngine):
 # ===========================================================================
 _ENGINE_MAP = {
     "docling":       DoclingEngine,
+    "google":        GoogleDocAIEngine,
     "google_doc_ai": GoogleDocAIEngine,
+    "aws":           AWSTextractEngine,
     "aws_textract":  AWSTextractEngine,
+    "azure":         AzureDocAIEngine,
+    "azure_doc_ai":  AzureDocAIEngine,
 }
 
 
 def get_ocr_engine(engine_name: str | None = None) -> BaseOCREngine:
     """
-    Retorna una instancia del motor OCR configurado.
-    Por defecto usa os.environ['OCR_ENGINE'] o 'docling'.
+    Retorna una instancia del motor OCR configurado con fallback automático.
     """
-    name = (engine_name or os.environ.get("OCR_ENGINE", "docling")).lower()
+    name = (engine_name or settings.ocr_engine or "docling").lower()
     engine_cls = _ENGINE_MAP.get(name)
+    
     if engine_cls is None:
-        raise ValueError(
-            f"Motor OCR desconocido: '{name}'. Opciones: {list(_ENGINE_MAP)}"
-        )
-    logger.info("Inicializando motor OCR: %s", name)
+        logger.warning(f"⚠️ Motor OCR '{name}' no reconocido. Fallback a Docling.")
+        return DoclingEngine()
+        
     try:
+        logger.info("🚀 Inicializando motor OCR: %s", name)
         return engine_cls()
     except Exception as exc:
-        logger.error("Error inicializando OCR '%s': %s — fallback a Docling.", name, exc)
-        if name != "docling":
-            return DoclingEngine()
-        raise
+        logger.error("❌ Fallo Crítico inicializando '%s': %s — Usando Docling local.", name, exc)
+        return DoclingEngine()
