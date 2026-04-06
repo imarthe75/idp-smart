@@ -103,8 +103,8 @@ def get_llm():
                 api_key=settings.runpod_api_key,
                 model=settings.llm_runpod_model,
                 temperature=settings.localai_temperature,
-                max_tokens=settings.localai_max_tokens,
-                timeout=settings.llm_runpod_timeout,
+                max_tokens=4096,
+                timeout=settings.proxy_timeout_s,
                 verbose=True
             )
         elif settings.llm_provider == "ollama":
@@ -225,47 +225,60 @@ def extract_form_data(document_md: str, form_schema: dict, visual_analysis: str 
     [PASO 3: RAZONAMIENTO] Extrae datos del Markdown usando Esquema + Análisis Visual.
     Implementa la lógica de 'Fusión Legal' (Multimodal en Gemini, Texto en otros).
     """
+    # Detectar si tenemos OCR real o estamos en modo visión pura
+    is_ocr_available = document_md and len(document_md) > 200 and "# VISION SKIP" not in document_md
+    
+    transcription_instruction = ""
+    if not is_ocr_available:
+        transcription_instruction = """
+2️⃣ TRANSCRIPCIÓN ESTRUCTURADA (MARKDOWN):
+Genera una transcripción Markdown de alta fidelidad que capture el texto íntegro que observas en las imágenes.
+"""
+    else:
+        transcription_instruction = """
+2️⃣ NOTA DE TRANSCRIPCIÓN:
+Ya se cuenta con OCR de alta calidad. NO generes transcripción. Enfócate 100% en la precisión de los campos JSON.
+"""
+
     template = """
-EXTRACCIÓN DE DATOS LEGALES CON MÁXIMA PRECISIÓN (ESTRATEGIA MULTI-ENTIDAD)
+EXTRACCIÓN DE EXPERTO LEGAL (RECALL MÁXIMO) 
 
-Eres un experto en documentos legales mexicanos y análisis notarial. Tu tarea es MAPEAR EXACTAMENTE cada UUID del esquema al valor correspondiente en el documento, ignorando variaciones terminológicas y enfocándote en la FUNCIÓN LEGAL.
+Eres un experto en documentos notariales mexicanos. Tu misión es extraer CADA UNO de los datos solicitados en el esquema, sin omitir ningún registro, especialmente en secciones repetitivas de SOCIOS, ASOCIADOS, APODERADOS u OTORGANTES.
 
-INSTRUCCIONES ESTRUCTURALES CRÍTICAS:
+--- ESTRATEGIA DE EXTRACCIÓN (REPRODUCCIÓN FIEL) ---
 
-1️⃣ FLEXIBILIDAD DE ROLES (MAPEO SEMÁNTICO):
-   - Si el esquema pide "Adquirientes" pero el documento es una DONACIÓN, extrae a los "DONATARIOS" en ese campo.
-   - Si el esquema pide "Enajenantes" pero el documento es una DONACIÓN, extrae a los "DONANTES".
-   - Si el documento es un FIDEICOMISO, mapea: Fideicomitente → Enajenante, Fideicomisario → Adquiriente.
-   - GUÍA DE ROLES: "Quien transmite/vende/dona" = Enajenante. "Quien recibe/compra/adquiere" = Adquiriente.
+1️⃣ NO OMITAS REGISTROS:
+- Si el documento menciona varios socios fundadores, DEBES extraer TODOS sin excepción.
+- Si hay un representante legal, apoderado o gerente, inclúyelo en la sección correspondiente según su función legal.
+- Si la sección es un ARRAY ([{{...}}]), extrae TODOS los bloques individuales que encuentres.
 
-2️⃣ ESTRATEGIA DE DETECCIÓN EXTENSIVA:
-   - NO OMITAS A NADIE. Si hay 10 copropietarios o herederos, extráelos a los 10 si el contenedor es repetitivo.
-   - Busca figuras "ocultas": Representantes legales (apoderados), cónyuges bajo sociedad conyugal, y testigos que actúan como partes.
-   - Si el esquema indica "repetitiva": true, DEBES retornar un ARRAY de objetos [{{...}}, {{...}}].
+2️⃣ MAPEO SEMÁNTICO FLEXIBLE:
+- "Quien transmite/vende/dona" = Enajenante. "Quien recibe/compra/adquiere" = Adquiriente.
+- Formatos: NOMBRES EN MAYÚSCULAS. Fechas YYYY-MM-DD.
 
-3️⃣ ESTRUCTURA DE RETORNO - UUID → VALUE:
-   El JSON debe usar EXCLUSIVAMENTE los UUIDs como claves. Ejemplo: {{"uuid_123": "Nombre", "uuid_456": [{{...}}, {{...}}]}}
+3️⃣ TRANSCRIPCIÓN (SI SE REQUIERE):
+{transcription_instruction}
 
-4️⃣ VALORES EXACTOS Y FORMATOS:
-   - Nombres: EXACTOS (ej: "LIC. JUAN PEREZ RODRIGUEZ").
-   - Fechas: ISO YYYY-MM-DD.
-   - Montos: Solo números puros (ej: 1500000.00).
-
-5️⃣ FUSIÓN LEGAL (ANÁLISIS VISUAL):
-   Si el análisis visual detecta sellos o firmas de personas que no están explícitamente en el texto del OCR, úsalos para completar los nombres de los otorgantes.
-
-🚨 NO INVENTES DATOS. Si un campo no existe, déjalo vacío o null según corresponda al tipo.
+--- ESTRUCTURA DE RESPUESTA (OBLIGATORIA) ---
+Responde EXCLUSIVAMENTE con un JSON válido. Respeta la jerarquía del esquema: si un contenedor (UUID) tiene controles asociados, devuelve un objeto bajo ese UUID, no una lista plana.
+{{
+  "fields": {{
+    "uuid_contenedor_notario": {{ "uuid_estado": "VALOR", "uuid_nombre": "VALOR" }},
+    "uuid_seccion_socios": [ {{ "uuid_socio": "VALOR", "uuid_rfc": "VALOR" }} ]
+  }},
+  "full_markdown": "SKIP o transcripción visual detallada"
+}}
 
 EVIDENCIA VISUAL:
 {visual_analysis}
 
-ESQUEMA TÉCNICO (UUIDs y Etiquetas):
+ESQUEMA TÉCNICO:
 {form_schema}
 
-CONTENIDO DEL DOCUMENTO (Markdown):
+CONTENIDO DEL DOCUMENTO:
 {document_md}
 
-Respuesta en JSON robusto:
+JSON DE RESPUESTA:
 """
     
     llm = get_llm()
@@ -275,10 +288,13 @@ Respuesta en JSON robusto:
     
     minified_schema = minify_schema(form_schema)
     schema_str = json.dumps(minified_schema, indent=2)
-    # Soporte para documentos masivos (500k chars = ~125k tokens | Gemini 3.1 Flash soporta 1M tokens)
-    safe_markdown = (document_md or "")[:500000]
+    # Soporte para documentos masivos (500k chars)
+    # Escapar llaves para .format()
+    raw_md = (document_md or "")[:500000]
+    safe_markdown = raw_md.replace("{", "{{").replace("}", "}}")
     
     final_prompt = template.format(
+        transcription_instruction=transcription_instruction,
         visual_analysis=visual_analysis or "No se proporcionó análisis adicional.",
         form_schema=schema_str,
         document_md=safe_markdown
@@ -336,9 +352,7 @@ Respuesta en JSON robusto:
                     response = llm.invoke([HumanMessage(content=content)])
                 else:
                     print(f"[Razonamiento] Enviando prompt ({settings.llm_provider}) (Intento {retry_count+1})...")
-                    prompt_tmpl = PromptTemplate.from_template(template)
-                    chain = prompt_tmpl | llm
-                    response = chain.invoke({"document_md": safe_markdown, "form_schema": schema_str, "visual_analysis": visual_analysis})
+                    response = llm.invoke([HumanMessage(content=final_prompt)])
                 
                 # Si llegamos aquí sin excepción, salimos del bucle de reintento
                 break

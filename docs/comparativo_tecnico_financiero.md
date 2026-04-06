@@ -1,85 +1,87 @@
-# Comparativa Técnico-Financiera Integral (Carga Mensual: 15,000 expedientes / 750,000 páginas)
-
-Este documento presenta un análisis exhaustivo de costos y rendimiento para todos los servicios propuestos, proyectando el gasto total mensual basado en una carga de 750,000 páginas.
-
----
-
-## 1. Servicios de Extracción y OCR (Costos Mensuales)
-
-| Proveedor | Servicio | Tiempo (pág/s) | Costo por Página | **Costo Total Mensual** |
-| :--- | :--- | :--- | :--- | :--- |
-| **Local (Actual)** | Docling CPU (48C/48GB) | 0.4 pág/s | $0.0000 | **$0 USD** |
-| **RunPod** | Docling (L40S GPU) | 3.0 pág/s | $0.0002 | **$150 USD** |
-| **AWS** | Textract (Standard) | 1.8 pág/s | $0.0150 | **$11,250 USD** |
-| **Google** | Document AI | 2.1 pág/s | $0.0300 | **$22,500 USD** |
-| **Azure** | AI Document Intelligence | 2.0 pág/s | $0.0100 | **$7,500 USD** |
+# Informe Maestro de Ingeniería y Estrategia Financiera: Proyecto Tolucón
+**Escenario de Carga:** 15,000 expedientes/mes | 50 páginas promedio | 750,000 páginas totales/mes.
 
 ---
 
-## 2. Servicios de Inteligencia LLM (Costos Mensuales)
-*Basado en un promedio de 8,000 tokens de input y 1,000 de output por expediente.*
+## 1. Matriz Maestra Full-Detail: Desglose Técnico-Financiero (11 Combinaciones)
+Esta matriz detalla el costo operativo mensual segregado por componente, infraestructura y el total, incluyendo la inversión inicial (CAPEX) requerida para cada escenario.
 
-| Modelo | Proveedor | Costo 1M Input | Costo 1M Output | **Costo Total Mensual** | Ventana Contexto |
+| Motor de OCR (Extracción) | Cerebro de IA (LLM) | Infraestructura | Costo Motor (OCR) | Costo Cerebro (IA) | Costo Infra (Luz/Renta) | **Costo Inicial (CAPEX)** | **Total Mensual (OPEX)** | Eficiencia (Docs/Hora) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Docling (CPU 48C)** | **Gemini 1.5 Flash** | Híbrido Local/Cloud | $0.00 | $13.50 | $1,125.00 | $2,000.00 | **$1,138.50 USD** | 20 - 30 |
+| **Docling (L40S Local)** | **Qwen2-VL / Granite** | **Soberanía (Local)** | **$0.00** | **$0.00** | **$300.00** | **$38,500.00** | **$300.00 USD** | **550 - 650** |
+| **Document AI (GCP)** | **Gemini 1.5 Pro** | Cloud Nativo (GCP) | $22,500.00 | $225.00 | $100.00 | $1,500.00 | **$22,825.00 USD** | **1,200+** |
+| **Document AI (GCP)** | **Qwen2-VL / Granite** | Híbrido Cloud/Local | $22,500.00 | $0.00 | $150.00 | $1,500.00 | **$22,650.00 USD** | 800 - 900 |
+| **AWS Textract** | **Claude 3.5 Sonnet** | Cloud Nativo (AWS) | $11,250.00 | $562.50 | $100.00 | $1,500.00 | **$11,912.50 USD** | 800 - 1,000 |
+| **AWS Textract** | **Granite 3.0 (Local)** | Híbrido AWS/Local | $11,250.00 | $0.00 | $150.00 | $1,500.00 | **$11,400.00 USD** | 600 - 700 |
+| **Azure AI Doc** | **GPT-4o (Azure)** | Cloud Nativo (MS) | $7,500.00 | $487.50 | $100.00 | $1,500.00 | **$8,087.50 USD** | 900 - 1,100 |
+| **Azure AI Doc** | **Granite 3.0 (Local)** | Híbrido Azure/Loc | $7,500.00 | $0.00 | $150.00 | $1,500.00 | **$7,650.00 USD** | 700 - 800 |
+| **Docling (3x RunPod)** | **RunPod LLM (vLLM)** | Cloud IaaS (Renta) | $450.00 | $0.00 | $2,550.00 | $500.00 | **$3,000.00 USD** | 900 - 1,200 |
+| **Docling (CPU 48C)** | **Claude 3.5 Sonnet** | Híbrido Local/Cloud | $0.00 | $562.50 | $1,125.00 | $2,000.00 | **$1,687.50 USD** | 20 - 30 |
+| **Docling (CPU 48C)** | **Granite 3.0 (Local)** | Local Puro (No GPU) | $0.00 | $0.00 | $110.00 | $2,000.00 | **$110.00 USD** | **< 2 (Inviable)** |
+
+---
+
+## 2. Análisis Detallado de Inversión Inicial (CAPEX)
+Especificaciones y costos del hardware de alta gama necesario para la producción masiva.
+
+| Elemento de Hardware | Especificaciones Técnicas | Inversión Estimada |
+| :--- | :--- | :--- |
+| **Servidor Base Dell/Cisco** | Chasis Rack 2U con fuentes redundantes y Dual AMD EPYC | $12,500.00 USD |
+| **Aceleración GPU** | **2x NVIDIA L40S (96GB VRAM Totales)** | $22,000.00 USD |
+| **Memoria RAM** | **384GB DDR5 (24x 16GB o similar)** | $3,500.00 USD |
+| **Almacenamiento NVMe** | 4TB Enterprise Gen4 para base de datos y cache | $500.00 USD |
+| **Total Inversión (Soberanía Local)** | **Equipamiento para Producción de 15k Docs/mes** | **$38,500.00 USD** |
+
+---
+
+## 3. Análisis Granular de Costos de Inteligencia (LLM)
+*Proyección basada en un promedio de 8,000 tokens de entrada y 1,000 de salida por cada expediente de 50 páginas.*
+
+| Modelo | Proveedor | Costo 1M Input | Costo 1M Output | **Costo Total Mensual (15k docs)** | Ventana de Contexto |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Gemini 1.5 Flash** | Google | $0.075 | $0.30 | **$13.50 USD** | 1,000,000 |
+| **GPT-4o-mini** | OpenAI / Azure | $0.150 | $0.60 | **$27.00 USD** | 128,000 |
 | **Gemini 1.5 Pro** | Google | $1.250 | $5.00 | **$225.00 USD** | 2,000,000 |
-| **Claude 3.5 Sonnet** | Anthropic | $3.000 | $15.00 | **$562.50 USD** | 200,000 |
-| **GPT-4o** | OpenAI | $2.500 | $10.00 | **$487.50 USD** | 128,000 |
-| **GPT-4o-mini** | OpenAI | $0.150 | $0.60 | **$27.00 USD** | 128,000 |
-| **Granite 3.0** | IBM (Local) | $0.000 | $0.00 | **$0.00 USD** | 128,000 |
+| **GPT-4o** | OpenAI / Azure | $2.500 | $10.00 | **$487.50 USD** | 128,000 |
+| **Claude 3.5 Sonnet** | Anthropic / AWS | $3.000 | $15.00 | **$562.50 USD** | 200,000 |
+| **Granite 3.0 / Qwen** | **IBM (Local)** | **$0.000** | **$0.00** | **$0.00 USD** | 128,000 |
 
 ---
 
-## 3. Comparativa de Infraestructura de Hardware
+## 4. Desglose de Infraestructura y OPEX Mensual
+Detalle de lo que compone la columna "Costo Infra" en la matriz maestra.
 
-| Métrica | Servidor Orquestador Actual | Servidor Producción (Dell EPYC) |
-| :--- | :--- | :--- |
-| **Arquitectura CPU** | 48 Nucleos (Dual Socket) | Dual EPYC (96+ Nucleos) |
-| **Memoria RAM** | **48 GB** (Limitado) | **364 GB** |
-| **Memoria GPU** | N/A | **2x NVIDIA L40S (96GB VRAM)** |
-| **Concurrencia Docling** | Media (Limitada por RAM) | Masiva (Acelerada por GPU) |
-| **Costo Mensual (OPEX)** | ~$100 (Energía/Mantenimiento) | ~$300 (Energía/Enfriamiento) |
-| **Estado Local** | Operativo | **Pendiente de Adquisición** |
+| Concepto | Servidor 48C Actual | **Dell/Cisco (2x L40S/384GB/EPYC)** | **3x RunPod (L40S)** |
+| :--- | :--- | :--- | :--- |
+| **Energía Eléctrica** | ~$80.00 USD | **~$220.00 USD** | N/A |
+| **Enfriamiento / AACC** | ~$30.00 USD | **~$80.00 USD** | N/A |
+| **Renta de Instancia** | N/A | N/A | **~$2,550.00 USD** |
+| **Mantenimiento / Soporte** | Incluido | Amortizado | Incluido |
+| **Total OPEX Mensual** | **$110.00 USD** | **$300.00 USD** | **$2,550.00 USD** |
 
 ---
 
-## 4. Matriz Comparativa de Capacidades Técnicas
+## 5. Proyección de Costo Total de Operación (TCO) y ROI
+*Proyección mensual para 15,000 expedientes incluyendo CAPEX + OPEX + Servicios.*
 
-| Servicio | Manejo de Tablas | Análisis de Firmas | Ventana de Contexto | Dependencia Cloud |
+| Escenario de Despliegue | Inversión Inicial (CAPEX) | Gasto Mensual (OPEX) | **Costo Año 1 (Total)** | Costo por Expediente |
 | :--- | :--- | :--- | :--- | :--- |
-| **Docling (Local)** | Excelente | Básico (vía LLM) | N/A | No |
-| **AWS Textract** | Excelente | Muy Bueno | N/A | Sí |
-| **Gemini 1.5 Flash** | No aplica | Bueno (Multimodal) | 1M Tokens | Sí |
-| **Claude 3.5 Sonnet** | No aplica | Excelente | 200k Tokens | Sí |
-| **IBM Granite** | No aplica | Básico | 128k Tokens | No |
+| **1. 100% On-Premise (L40S)** | **$38,500.00** | **$300.00** | **$42,100.00 USD** | **$0.020 USD** |
+| **2. Híbrido (48C + Gemini)** | $2,000.00 | $1,138.50 | **$15,662.00 USD** | **$0.075 USD** |
+| **3. RunPod (3 Pods)** | $500.00 | $3,000.00 | **$36,500.00 USD** | **$0.200 USD** |
+| **4. Cloud Microsoft (Azure)** | $1,500.00 | $8,087.50 | **$98,550.00 USD** | **$0.539 USD** |
+| **5. Enterprise (GCP)** | $1,500.00 | $22,825.00 | **$275,400.00 USD** | **$1.521 USD** |
 
 ---
 
-## 5. Proyección de Volumen vs Tiempo
+## 6. Eficiencia de Tiempo y Memoria (Análisis de Producción)
 
-| Infraestructura | Tiempo por Expediente (Avg) | Días para 15,000 Expedientes |
-| :--- | :--- | :--- |
-| **Solo local (48C/48GB)** | 120 segundos | ~21 días (24/7) |
-| **Híbrido (Local + RunPod)** | **25 segundos** | **~4.3 días (24/7)** |
-| **Cloud Puro (AWS/Google)** | 45 segundos | ~7.8 días (24/7) |
+1.  **Soberanía Local (Dual EPYC + 384GB RAM):** El factor crítico son los **384GB de RAM**. En el modelo de **Expediente Multinivel**, cada worker de Docling y cada proceso de LLM local podrá cargar el documento completo de 50 páginas en memoria ultrarrápida. Tiempo estimado para 15k expedientes: **~3.2 días**.
+2.  **Infraestructura de 48C Actual:** Debido a los 48GB de RAM, el servidor se ve obligado a realizar *paging* (uso de disco como memoria), degradando la velocidad de procesamiento. Tiempo estimado: **~21 días**.
+3.  **RunPod (3 Pods):** Ofrece la mayor elasticidad; al dividir la carga en 3, la concurrencia es masiva. Tiempo estimado: **~3.5 días**.
 
 ---
 
-## 6. Comparativa de Costos Totales de Operación (TCO)
-*Proyección mensual para 15,000 expedientes (750,000 páginas) incluyendo Hardware + OCR + LLM.*
-
-| Escenario de Despliegue | OCR (Procesamiento) | LLM (Razonamiento) | Hardware (OPEX/Nube) | **Costo Total Mensual** | **Costo por Expediente** |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **1. 100% On-Premise** | $0.00 (Docling) | $0.00 (Granite 3.0) | $300.00 (Servidor Propio) | **$300.00 USD** | $0.020 USD |
-| **2. Híbrido (Local + Gemini)** | $0.00 (Docling) | $13.50 (Flash Lite) | $300.00 (Servidor Propio) | **$313.50 USD** | $0.021 USD |
-| **3. Acelerado (RunPod + Gemini)** | $150.00 (GPU L40S) | $13.50 (Flash Lite) | $300.00 (Servidor Propio) | **$463.50 USD** | $0.031 USD |
-| **4. Cloud Económico (AWS + Gemini)** | $11,250.00 (AWS) | $13.50 (Flash Lite) | $100.00 (Orquestador) | **$11,363.50 USD** | $0.758 USD |
-| **5. Enterprise Cloud (AWS + GPT-4o)**| $11,250.00 (AWS) | $487.50 (GPT-4o) | $100.00 (Orquestador) | **$11,837.50 USD** | $0.789 USD |
-
----
-
-## 7. Análisis de Retorno de Inversión (ROI)
-El despliegue de la **Arquitectura Híbrida v2.0** propuesta (Escenario 2 o 3) representa un **ahorro superior al 95%** en comparación con soluciones puras de nube empresarial (AWS/Azure/Google AI), manteniendo la soberanía de los datos legales y reduciendo el tiempo de procesamiento de 21 días a solo 4 días para los 15,000 expedientes iniciales.
-
----
-*Nota: Los costos y tiempos son estimaciones basadas en los precios de lista a Marzo de 2026 y pruebas de rendimiento preliminares.*
+### Conclusión Estratégica
+La implementación del servidor de alta gama (Escenario 1) es la única vía para alcanzar la **Soberanía Tecnológica** con un costo marginal de operación. El ahorro frente a GCP en el primer año (**$233,300 USD**) paga el servidor más de 6 veces. Este hardware es el cimiento necesario para que el frontend en **Angular** y la base de datos PostgreSQL operen sin latencia alguna mientras la IA procesa los expedientes en segundo plano.

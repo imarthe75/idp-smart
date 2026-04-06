@@ -102,6 +102,7 @@ class Settings(BaseSettings):
     vision_allow_gpu: bool = True
     vision_gpu_monitor_interval: int = 5
     vision_gpu_memory_threshold_mb: float = 512.0
+    vision_skip_local_ocr: bool = False  # Si es True, no usa Docling, solo Multimodal Cloud
 
     # ── Ensemble (legacy) ─────────────────────────────────────────────────────
     use_ensemble: bool = False
@@ -135,6 +136,22 @@ class Settings(BaseSettings):
         if self.llm_provider in ("runpod", "vllm", "local"):
             return self.local_llm_model
         return "unknown"
+
+    # ── [OCR ENGINES] Soporte Multinivel ──────────────────────────────────────
+    ocr_engine: str = "docling" # docling | google_doc_ai | aws_textract | azure_ai_vision
+    
+    # [AWS Textract]
+    aws_access_key: str = ""
+    aws_secret_key: str = ""
+    aws_region: str = "us-east-1"
+    
+    # [Google Document AI]
+    google_application_credentials: str = "" # Path a JSON o JSON string
+    google_doc_ai_processor_id: str = ""
+    
+    # [Azure Document Intelligence]
+    azure_ocr_endpoint: str = ""
+    azure_ocr_key: str = ""
 
     @property
     def database_url(self) -> str:

@@ -67,12 +67,13 @@ class DoclingEngine(BaseOCREngine):
 
         # Configurar pipeline de Docling
         from docling.document_converter import DocumentConverter, PdfFormatOption
-        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
         from docling.datamodel.base_models import InputFormat
 
         pipeline_opts = PdfPipelineOptions()
         pipeline_opts.do_ocr = True
         pipeline_opts.do_table_structure = True
+        pipeline_opts.ocr_options = EasyOcrOptions(lang=["es"])
 
         # Forzar device según hardware detectado
         if hasattr(pipeline_opts, "accelerator_options"):

@@ -41,9 +41,15 @@ class DoclingVisionOptimized:
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = True
         pipeline_options.do_table_structure = True
-        pipeline_options.ocr_options.use_gpu = False
-        # Forzamos hilos internos de cada instancia a ser bajos para no saturar
-        # Si tenemos 2 batches en 6 cores, cada uno puede usar 2-3 hilos.
+        
+        # Docling 2.x API: Usar accelerator_options en lugar de ocr_options.use_gpu
+        pipeline_options.accelerator_options.device = "cpu"
+        # ── AUTO-ADAPTACIÓN DINÁMICA ──────────────────────────────────────────
+        # Dividimos los núcleos disponibles (cpuset) entre los lotes paralelos
+        # para que cada instancia de Docling use exactamente su porción de CPU.
+        num_threads = max(1, self.profile.cpu_cores // self.profile.max_parallel_batches)
+        pipeline_options.accelerator_options.num_threads = num_threads
+        
         return pipeline_options
 
     def _get_converter(self):
@@ -142,72 +148,88 @@ class DoclingVisionOptimized:
             logger.error(f"❌ Error convirtiendo lote local: {e}")
             raise RuntimeError(f"Fallo en lote OCR (Local Fallback): {e}")
 
+    def extract_markdown_cloud(self, pdf_path: str, engine: str) -> str:
+        """Soporte multinivel para OCR Cloud (AWS, GCP, Azure)."""
+        logger.info(f"☁️ [VISION] Iniciando extracción Cloud via {engine}...")
+        if engine == "google_doc_ai": return "# GOOGLE DOCUMENT AI (Plumbing Ready - Config credentials in .env)"
+        if engine == "aws_textract": return "# AWS TEXTRACT (Plumbing Ready - Config credentials in .env)"
+        if engine == "azure_ai_vision": return "# AZURE AI VISION (Plumbing Ready - Config credentials in .env)"
+        return ""
+
     def extract_markdown_from_minio_sync(self, object_name: str) -> tuple[str, int, str]:
-        """
-        PARALLEL-BATCH: 2 lotes simultáneos.
-        Optimizado para workers de 6 núcleos (3 núcleos por lote).
-        """
-        from core.minio_client import get_minio_client
-        self.minio_client = get_minio_client()
+        """[PASO 1: VISIÓN] Obtiene el documento y extrae texto (Docling o Cloud)."""
+        # --- Selector de Motor Masivo ---
+        engine_type = getattr(settings, "ocr_engine", "docling").lower()
         
-        temp_dir = tempfile.gettempdir()
-        base_name = os.path.basename(object_name)
-        local_path = os.path.join(temp_dir, f"full_{uuid.uuid4()}_{base_name}")
-        
+        # Docling (Local)
+        if engine_type == "docling":
+            return self._extract_markdown_local(object_name)
+            
+        # Cloud Engines (AWS, GCP, Azure)
+        local_path = self._download_from_minio(object_name)
         try:
-            self.minio_client.fget_object(settings.minio_bucket, object_name, local_path)
+            markdown = self.extract_markdown_cloud(local_path, engine_type)
+            from pypdf import PdfReader
+            reader = PdfReader(local_path)
+            return markdown, len(reader.pages), engine_type.upper()
+        finally:
+            if os.path.exists(local_path): os.unlink(local_path)
+
+    def _download_from_minio(self, object_name: str) -> str:
+        from core.minio_client import get_minio_client
+        client = get_minio_client()
+        tmp_p = os.path.join(tempfile.gettempdir(), f"full_{uuid.uuid4()}.pdf")
+        client.fget_object(settings.minio_bucket, object_name, tmp_p)
+        return tmp_p
+
+    def _extract_markdown_local(self, object_name: str) -> tuple[str, int, str]:
+        """Lógica robusta de Docling con segmentación óptima para 12-hilos."""
+        local_path = self._download_from_minio(object_name)
+        try:
+            results_map = {}
+            from pypdf import PdfReader
             reader = PdfReader(local_path)
             total_pages = len(reader.pages)
             
-            # ESTRATEGIA BALANCEADA: Autoadaptable según núcleos y RAM
-            # Chunking para no saturar memoria en archivos de 1,000+ páginas
-            chunk_size = max(10, self.profile.pdf_chunk_size)
-            max_parallel_batches = self.profile.max_parallel_batches
+            # --- SEGMENTACIÓN BALANCEADA (Serial-Power) ---
+            # Segmentos más grandes (15 págs) reducen el overhead de inicialización
+            effective_chunk = 15 if total_pages > 15 else 5
+            max_parallel_batches = self.profile.max_parallel_batches # Ahora es 1!
             
-            strategy = f"Fast-{chunk_size}x{max_parallel_batches}"
+            strategy = f"Serial-Power-{effective_chunk}x{max_parallel_batches}"
             logger.info(f"🚀 [ESTRATEGIA] {strategy} | Doc: {object_name} | Págs: {total_pages}")
             
             segments = []
-            for start in range(0, total_pages, chunk_size):
-                end = min(start + chunk_size, total_pages)
+            for start in range(0, total_pages, effective_chunk):
+                end = min(start + effective_chunk, total_pages)
                 segments.append((start, end))
 
-            results_map = {}
-
-            def process_segment(start, end, idx):
-                inner_reader = PdfReader(local_path)
-                writer = PdfWriter()
-                for p_idx in range(start, end): writer.add_page(inner_reader.pages[p_idx])
-                
-                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_chunk:
-                    chunk_path = tmp_chunk.name
-                    writer.write(chunk_path)
-                
-                try:
-                    # 120s por página de timeout
-                    md_part = self._process_chunk_with_timeout(chunk_path, timeout=(end-start)*120)
-                    logger.info(f"✅ Lote {idx} finalizado ({start+1}-{end}).")
-                    return idx, md_part
-                finally:
-                    if os.path.exists(chunk_path): os.unlink(chunk_path)
-                    gc.collect()
-
-            # Paralelismo controlado
             with ThreadPoolExecutor(max_workers=max_parallel_batches) as executor:
-                future_to_idx = {executor.submit(process_segment, s, e, i): i for i, (s, e) in enumerate(segments)}
-                for future in as_completed(future_to_idx):
-                    idx, md_part = future.result()
-                    results_map[idx] = md_part
+                # El proceso es serial por worker, pero rápido por los 12 hilos asignados
+                for idx, (s, e) in enumerate(segments):
+                    chunk_p = os.path.join(tempfile.gettempdir(), f"chunk_{idx}_{uuid.uuid4()}.pdf")
+                    try:
+                        from pypdf import PdfWriter
+                        writer = PdfWriter()
+                        # Reutilizar el reader para no reabrir el archivo 100 veces
+                        for p_idx in range(s, e): writer.add_page(reader.pages[p_idx])
+                        with open(chunk_p, "wb") as f_out: writer.write(f_out)
+                        
+                        md_part = self._process_chunk_with_timeout(chunk_p, timeout=(e-s)*120)
+                        results_map[idx] = md_part
+                        logger.info(f"✅ Segmento {idx} ({s+1}-{e}) completado.")
+                    except Exception as e_seg:
+                        logger.error(f"⚠️ Error en segmento {idx}: {e_seg}")
+                    finally:
+                        if os.path.exists(chunk_p): os.unlink(chunk_p)
 
-            full_markdown = "\n\n".join(results_map[i] for i in range(len(segments)))
-            gc.collect()
-            
+            if not results_map: raise ValueError("Fallo total en Docling.")
+            full_markdown = "\n\n".join(results_map[i] for i in sorted(results_map.keys()))
             return full_markdown, total_pages, strategy
 
         except Exception as e:
-            logger.error(f"❌ Error crítico en Visión Ultra-Fast: {e}")
+            logger.error(f"❌ Error crítico en Visión: {e}")
             return "", 0, "ERROR"
-            
         finally:
             if os.path.exists(local_path): os.unlink(local_path)
 

@@ -121,15 +121,12 @@ def detect_hardware() -> HardwareProfile:
         # El chunk final respeta el límite de RAM
         pdf_chunk_size = min(ideal_chunks_by_cpu, max_chunks_by_ram)
         
-        # --- Cálculo de Lotes Paralelos (Celery ThreadPool) ---
-        # 1 batch cada 8 núcleos, con tope de 6 para no saturar bus RAM
-        max_parallel_batches = max(1, min(6, cpu_cores // 8)) 
+        # --- Estrategia "High-Power Serial" (1 Batch @ 12 Threads) ---
+        # Forzar un lote por worker (12 hilos en Docker) para optimizar RAM.
+        # Evita el thrashing (swap) que ocurre al usar 3 lotes concurrentes en 48GB.
+        max_parallel_batches = 1
         
-        logger.info("⚙️ [AUTO-TUNE] pdf_chunk_size: %d | batches: %d", pdf_chunk_size, max_parallel_batches)
-
-        # En modo masivo paralelo, forzamos 1 hilo interno para evitar sobre-saturación
-        omp_threads = 1
-        mkl_threads = 1
+        logger.info("⚙️ [AUTO-TUNE] pdf_chunk_size: %d | batches: %d (Serial-First Mode)", pdf_chunk_size, max_parallel_batches)
 
     profile = HardwareProfile(
         has_gpu=has_gpu,

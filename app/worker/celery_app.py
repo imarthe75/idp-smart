@@ -252,8 +252,12 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
         docling_start = time.time()
         docling_duration = 0.0
         gpu_model = "CPU"
+        p_count = 0
         
-        if not skip_vision:
+        # Opción para saltar OCR local y usar Multimodalidad Cloud pura
+        force_multimodal = settings.vision_skip_local_ocr and not skip_vision
+
+        if not skip_vision and not force_multimodal:
             _set_stage(task_id, "VISION")
             with timed_stage(db_engine, task_id, "VISION", "Extracción Markdown — Documento Principal"):
                 log_event(db_engine, task_id, "VISION", "[PASO 1] Docling: Extracción estructural")
@@ -269,6 +273,33 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
                     )
                 if not doc_markdown:
                     doc_markdown = "# Documento Principal\nContenido no extraído."
+        elif force_multimodal:
+            _set_stage(task_id, "VISION")
+            log_event(db_engine, task_id, "VISION", "Saltando Docling (Modo Multimodal Cloud Activo).")
+            # Obtener page count rápido usando fitz
+            try:
+                import fitz
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_p:
+                    minio_client.fget_object(settings.minio_bucket, pdf_minio_object, tmp_p.name)
+                    doc_p = fitz.open(tmp_p.name)
+                    p_count = len(doc_p)
+                    doc_p.close()
+                    try:
+                        import os as _os
+                        _os.remove(tmp_p.name)
+                    except: pass
+            except Exception as e_p:
+                log_event(db_engine, task_id, "VISION", f"No se pudo obtener contador de páginas: {e_p}", level="WARNING")
+                p_count = 1 # Fallback
+            
+            gpu_model = "CLOUD-MULTIMODAL"
+            doc_markdown = "# VISION SKIP\nUsando multimodalidad pura en cloud."
+            with db_engine.begin() as conn:
+                conn.execute(
+                    text("UPDATE idp_smart.document_extractions SET page_count = :pc, gpu_model = :gpu WHERE task_id = :tid"),
+                    {"pc": p_count, "gpu": gpu_model, "tid": uuid.UUID(str(task_id))},
+                )
         else:
             doc_markdown = "" # Se recuperará si existía o se asume vacío si skip
             log_event(db_engine, task_id, "VISION", "Saltando etapa VISION (Step 1).")
@@ -352,7 +383,10 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
         inference_cost_usd = 0.0
 
         image_paths = []
-        if settings.llm_provider == "google" and not skip_vision:
+        # Forzar generación de imágenes si no hay markdown (o forzado multimodal)
+        force_images = settings.vision_skip_local_ocr or not doc_markdown or len(doc_markdown) < 100
+
+        if settings.llm_provider in ("google", "gemini", "openai", "anthropic") and (not skip_vision or force_images):
             try:
                 import fitz
                 import tempfile
@@ -362,8 +396,14 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
                     minio_client.fget_object(settings.minio_bucket, pdf_minio_object, tmp_pdf.name)
                     doc = fitz.open(tmp_pdf.name)
 
-                    indices = [0]
-                    if len(doc) > 1: indices.append(len(doc)-1)
+                    # Estrategia: Muestreo Estratégico de 5 Páginas (Portada, Medio, Contraportada)
+                    # Ideal para detectar socios (suelen estar al principio o al final)
+                    if len(doc) <= 5:
+                        indices = range(len(doc))
+                    else:
+                        indices = [0, 1, len(doc)//2, len(doc)-2, len(doc)-1]
+
+                    log_event(db_engine, task_id, "AGENT", f"Muestreo estratégico multimodal (Págs: {list(indices)})")
 
                     for idx in indices:
                         page = doc.load_page(idx)
@@ -375,20 +415,30 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
                     doc.close()
                     os.remove(tmp_pdf.name)
 
-                gpu_model = "Google-Gemini"
-                log_event(db_engine, task_id, "AGENT", f"Pipeline Multimodal Gemini ({len(image_paths)} imagenes)")
+                if "gpu_model" not in locals() or gpu_model == "CPU":
+                    gpu_model = f"{settings.llm_provider.upper()}-VISION"
+                log_event(db_engine, task_id, "AGENT", f"Pipeline Multimodal Cloud ({len(image_paths)} imagenes)")
             except Exception as e_img:
-                log_event(db_engine, task_id, "AGENT", f"Error imagenes Gemini: {e_img}", level="WARNING")
+                log_event(db_engine, task_id, "AGENT", f"Error imágenes multimodal: {e_img}", level="WARNING")
 
         with timed_stage(db_engine, task_id, "AGENT",
                          f"Fusion Legal: Razonamiento {settings.llm_provider.upper()} + Multimodalidad"):
             try:
-                extracted_key_val = extract_form_data(
+                llm_response = extract_form_data(
                     doc_markdown,
                     schema,
                     visual_analysis=visual_analysis,
                     image_paths=image_paths
                 )
+                # Manejar nueva estructura {fields, full_markdown}
+                if isinstance(llm_response, dict) and "fields" in llm_response:
+                    extracted_key_val = llm_response["fields"]
+                    ai_md = llm_response.get("full_markdown")
+                    if ai_md and settings.vision_skip_local_ocr:
+                        doc_markdown = ai_md
+                        log_event(db_engine, task_id, "AGENT", "Markdown generado por IA recibido.")
+                else:
+                    extracted_key_val = llm_response
             except Exception as agent_err:
                 # -- CLOUD FALLBACK AUTOMATICO ---------------------------------------
                 cloud_fallback = str(getattr(settings, "enable_cloud_fallback", "false")).lower() == "true"
@@ -425,6 +475,21 @@ def process_doc(task_id: str, json_minio_object: str, pdf_minio_object: str, ski
 
             for p in image_paths:
                 if os.path.exists(p): os.remove(p)
+
+            # Si el markdown fue generado por la IA (en modo skip_ocr), lo persistimos ahora
+            if settings.vision_skip_local_ocr and doc_markdown and "Usando multimodalidad" not in doc_markdown:
+                try:
+                    md_bytes = doc_markdown.encode("utf-8")
+                    md_object_name = f"{task_id}/extracted_markdown_full.md"
+                    markdown_path = upload_file_to_minio(minio_client, md_object_name, md_bytes, "text/markdown")
+                    with db_engine.begin() as conn:
+                        conn.execute(
+                            text("UPDATE idp_smart.document_extractions SET markdown_minio_path = :path WHERE task_id = :tid"),
+                            {"path": markdown_path, "tid": task_id},
+                        )
+                    log_event(db_engine, task_id, "AGENT", "Markdown de la IA persistido en MinIO.")
+                except Exception as e_md_save:
+                    log_event(db_engine, task_id, "AGENT", f"Error guardando markdown de IA: {e_md_save}", level="WARNING")
 
             filled_count = sum(1 for v in extracted_key_val.values() if v) if extracted_key_val else 0
             total_count = len(flat_fields)

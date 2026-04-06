@@ -8,7 +8,8 @@ ENV PYTHONPATH=/app
 
 # Install system dependencies
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && apt-get install -y --no-install-recommends gcc libpq-dev libxcb1 libgl1 libglib2.0-0 libxrender1 libxext6 \
+    && pip install --upgrade pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create and set working directory
