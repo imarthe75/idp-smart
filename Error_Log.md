@@ -21,3 +21,15 @@
 - **Síntoma**: Fallo en la extracción con mensaje `model gemini-1.5-flash-latest not found`.
 - **Causa**: Cambio manual de modelo en `.env` a una versión no soportada por la región/API Key en ese momento.
 - **Solución**: Se unificó el uso de `gemini-3.1-flash-lite-preview` con una nueva API Key de alto rendimiento (15 RPM).
+
+## 2026-04-06: Incidentes durante Mejora de Infraestructura
+
+### 1. Error de Conexión en Workers (DB Restart)
+- **Síntoma**: Tareas estancadas en `PENDING_CELERY` con el error `OperationalError: server closed the connection unexpectedly`.
+- **Causa**: Se reinició el contenedor `idp_db` para exponer el puerto 5432 al host. Los workers de Celery mantuvieron conexiones TCP "muertas" (zombies) hacia la instancia anterior de la BD.
+- **Solución**: Reinicio forzado de los 4 workers de Celery (`docker compose restart`) para refrescar el pool de conexiones. Se reseteó manualmente el estado de las tareas afectadas en la BD.
+
+### 2. Error de Variable 'logger' No Definida en worker_app
+- **Síntoma**: Falla inmediata al procesar TIFFs con error `NameError: name 'logger' is not defined`.
+- **Causa**: Falta de importación o inicialización del logger en los nuevos bloques de persistencia de TIFF en `celery_app.py`.
+- **Solución**: Se integró el logger estándar y se movió la lógica de persistencia al motor `vision_optimized.py` donde el contexto de logging es más robusto.

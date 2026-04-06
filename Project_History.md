@@ -54,4 +54,27 @@
 
 ### Próximos Pasos 
 - Continuar el monitoreo de la RAM para evitar picos de Swap por encima de los 48GB durante el procesamiento de archivos de 1000+ páginas.
-- Implementar cacheo persistente de resultados de visión en MinIO.
+- Implementar cacheo persistente de resultados de visión en MinIO. (COMPLETADO 2026-04-06)
+
+## 2026-04-06: Orquestación Multi-Cloud y Visión Avanzada (v3.3)
+
+### 1. Motores OCR Multi-Cloud
+- Implementación nativa de **Azure Document Intelligence**, **AWS Textract** y **Google Document AI** en `ocr_factory.py`.
+- **Estrategia de Fallback Dinámico**: El orquestador intenta el motor configurado en `.env` (p. ej. Azure) y, ante cualquier fallo de cuota o red, realiza un *fallback* automático a **Docling local**, garantizando que la extracción nunca se detenga.
+
+### 2. Visión Multimodal con Qwen2-VL
+- Integración de análisis de evidencia visual mediante **Qwen2-VL** en RunPod.
+- El sistema ahora detecta y describe sellos notariales, firmas autógrafas y logotipos, inyectando esta "Evidencia Visual" en el razonamiento del LLM.
+- **Cacheo de Visión**: Se implementó un sistema de cacheo en MinIO que reutiliza análisis visuales de tareas previas basadas en el mismo documento, reduciendo costos de GPU y latencia.
+
+### 3. Persistencia Dual TIFF/PDF
+- Soporte extendido para archivos TIFF: El sistema ahora convierte automáticamente los TIFF a PDF de alta resolución.
+- **Trazabilidad**: Ambos archivos (el TIF original y el PDF generado) se almacenan en MinIO bajo el ID de la tarea (`[task_id]/source_converted.pdf`), permitiendo auditoría completa.
+
+### 4. Infraestructura y Conectividad
+- **Acceso Externo a DB**: Apertura del puerto **5432** en el contenedor de Docker para permitir auditoría directa desde herramientas externas como Navicat.
+- **Optimización de Segmentación**: Sintonización del `pdf_chunk_size` dinámico en `vision_optimized.py` para respetar los límites de RAM del hardware_detector.
+
+### Próximos Pasos 
+- Finalizar el motor de búsqueda semántica (RAG) sobre el repositorio histórico de MinIO.
+- Desarrollar la interfaz "Human-in-the-loop" para validación masiva de campos de baja confianza.
