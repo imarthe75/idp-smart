@@ -126,7 +126,7 @@ class DoclingEngine(BaseOCREngine):
             md = self._convert_bytes(raw_bytes)
             return md, total_pages, self._hw.processing_unit
 
-        src_doc = fitz.open(stream=raw_bytes, filetype="pdf")
+        src_doc = fitz.open(stream=raw_bytes)
         chunks_md: list[str] = []
         processed = 0
 
@@ -182,7 +182,7 @@ class DoclingEngine(BaseOCREngine):
     def _count_pages(raw: bytes) -> int:
         try:
             import fitz
-            doc = fitz.open(stream=raw, filetype="pdf")
+            doc = fitz.open(stream=raw)
             n = len(doc)
             doc.close()
             return n

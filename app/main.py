@@ -150,14 +150,17 @@ async def process_document(
     if not pdf_minio_path and document and document.filename:
         doc_content = await document.read()
         
-        # --- Cálculo inmediato de páginas ---
+        # --- Cálculo inmediato de páginas (Soporte PDF y TIFF) ---
         try:
             import io
-            from pypdf import PdfReader
+            import fitz
             pdf_buf = io.BytesIO(doc_content)
-            reader = PdfReader(pdf_buf)
-            p_count = len(reader.pages)
-        except: p_count = 0
+            # fitz detecta automáticamente si es PDF o Imagen (TIFF)
+            with fitz.open(stream=pdf_buf) as doc_info:
+                p_count = len(doc_info)
+        except Exception as e_count:
+            print(f"⚠️ Error contando páginas en upload: {e_count}")
+            p_count = 0
 
         pdf_object_name = f"{task_id}/{document.filename}"
         pdf_minio_path = upload_file_to_minio(minio_client, pdf_object_name, doc_content, document.content_type)
@@ -744,8 +747,9 @@ async def minio_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
             # ── Solo procesar PDFs — ignorar form.json, markdown, imágenes ──────
             # Esto elimina disparos duplicados y el race condition del form.json
-            if not clean_key.lower().endswith(".pdf"):
-                logger.info(f"⏭️ Ignorando archivo no-PDF: {clean_key}")
+            allowed_exts = (".pdf", ".tif", ".tiff")
+            if not clean_key.lower().endswith(allowed_exts):
+                logger.info(f"⏭️ Ignorando archivo no-compatible: {clean_key}")
                 continue
 
             # ── Retry: esperar hasta 3s a que el INSERT de la API sea visible ───

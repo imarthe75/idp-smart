@@ -186,6 +186,21 @@ class DoclingVisionOptimized:
         """Lógica robusta de Docling con segmentación óptima para 12-hilos."""
         local_path = self._download_from_minio(object_name)
         try:
+            # --- CONVERSOR TIFF (Soporte Multipágina) ---
+            # Para que el pipeline de 48-cores funcione, transformamos TIFF a PDF temporalmente.
+            if local_path.lower().endswith((".tif", ".tiff")):
+                import fitz
+                logger.info("🔄 [TIFF Converter] Detectado TIFF. Transformando a PDF para fragmentación...")
+                with fitz.open(local_path) as tiff_doc:
+                    pdf_bytes = tiff_doc.convert_to_pdf()
+                    pdf_path = os.path.join(tempfile.gettempdir(), f"conv_{uuid.uuid4()}.pdf")
+                    with open(pdf_path, "wb") as f_pdf:
+                        f_pdf.write(pdf_bytes)
+                
+                # Reemplazar path y limpiar el TIFF original descargado
+                if os.path.exists(local_path): os.unlink(local_path)
+                local_path = pdf_path
+
             results_map = {}
             from pypdf import PdfReader
             reader = PdfReader(local_path)
