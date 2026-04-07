@@ -11,10 +11,11 @@ from pypdf import PdfReader, PdfWriter
 import io
 import base64
 
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+# Defer docling imports to avoid crashes on slim workers
+# from docling.datamodel.base_models import InputFormat
+# from docling.datamodel.pipeline_options import PdfPipelineOptions
+# from docling.document_converter import DocumentConverter, PdfFormatOption
+# from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 
 from core.config import settings
 
@@ -22,7 +23,7 @@ import threading
 import fcntl
 
 logger = logging.getLogger(__name__)
-_INIT_LOCK_FILE = "/tmp/idp_ocr_init.lock"
+_INIT_LOCK_FILE = "/app/.ocr_init.lock"
 _global_converter = None
 _global_lock = threading.Lock()
 
@@ -36,6 +37,7 @@ class DoclingVisionOptimized:
         self.profile = detect_hardware()
         
     def _get_pipeline_config(self):
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = True
         pipeline_options.do_table_structure = True
@@ -49,6 +51,11 @@ class DoclingVisionOptimized:
         if _global_converter is None:
             with _global_lock:
                 if _global_converter is None:
+                    from docling.datamodel.base_models import InputFormat
+                    from docling.datamodel.pipeline_options import PdfPipelineOptions
+                    from docling.document_converter import DocumentConverter, PdfFormatOption
+                    from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+                    
                     pipeline_options = self._get_pipeline_config()
                     lock_file = open(_INIT_LOCK_FILE, "w")
                     try:
@@ -105,7 +112,8 @@ class DoclingVisionOptimized:
                     
                     # Persistencia dual: Guardar PDF en MinIO para descarga y auditoría
                     try:
-                        from minio_client import minio_client, upload_file_to_minio
+                        from core.minio_client import get_minio_client, upload_file_to_minio
+                        minio_client = get_minio_client()
                         # Extraer task_id del object_name (formato: task_id/filename.tif)
                         tid = object_name.split("/")[0] if "/" in object_name else "audit"
                         pdf_minio_path = f"{tid}/source_converted.pdf"
@@ -185,7 +193,40 @@ class DoclingVisionOptimized:
         return chunk_p
 
     def extract_markdown_from_minio_sync(self, object_name: str) -> tuple[str, int, str]:
+        """
+        Deriva la extracción a un microservicio remoto si está configurado,
+        de lo contrario intenta el procesamiento local.
+        """
+        if settings.docling_server_url:
+            try:
+                import requests
+                logger.info(f"🌐 [REMOTE] Llamando a microservicio Docling: {settings.docling_server_url}")
+                payload = {"bucket": settings.minio_bucket, "object_name": object_name}
+                # Timeout de proxy largo para documentos grandes
+                resp = requests.post(settings.docling_server_url, params=payload, timeout=settings.proxy_timeout_s * 2)
+                resp.raise_for_status()
+                data = resp.json()
+                
+                # --- [VALIDACIÓN DE ERROR EN RESPUESTA] ---
+                if data["markdown"].startswith("ERROR:"):
+                    raise RuntimeError(f"Microservicio Docling devolvió error: {data['markdown']}")
+                    
+                return data["markdown"], data["total_pages"], f"Remote-{data.get('strategy', 'unknown')}"
+            except Exception as e:
+                logger.error(f"⚠️ [REMOTE] Error llamando al microservicio: {e}")
+                # Fallback a local solo si las librerías están presentes
+                if self._can_process_locally():
+                     return self._extract_markdown_local(object_name)
+                raise RuntimeError(f"Fallo en extracción remota y local no disponible: {e}")
+        
         return self._extract_markdown_local(object_name)
+
+    def _can_process_locally(self) -> bool:
+        try:
+            import docling
+            return True
+        except ImportError:
+            return False
 
     def extract_visual_analysis_sync(self, pdf_path: str) -> str:
         """

@@ -154,8 +154,9 @@ Ajuste de tiempos según la plataforma de hardware y proveedor:
 
 | Servicio | Puerto Default | Contexto Estructural |
 |----------|----------------|----------------------|
-| **FastAPI REST API** | `8000` | Gateway Core (Uvicorn Workers) |
-| **Frontend UI (Vite)** | `5173` | UI Administrativa |
+| **FastAPI REST API** | `8000` | Gateway Core (Orquestación Paralelizada) |
+| **Frontend (React)** | `5173` | Dashboard moderno y reactivo (Vite). |
+| **Frontend (Angular)** | `5174` | UI Corporativa RPP (Angular 20 + PrimeNG). |
 | **Visión IA (Qwen-VL)** | `8001` *(External)* | Dedicado a *Evidencia Visual* |
 | **Razonamiento IA** | `8000` *(External)* | Dedicado a *Inferencia Textual* (Granite) |
 | **MinIO S3 Console**| `9001` | Object Storage Bucket Administration |
@@ -202,4 +203,4 @@ docker logs idp_worker -f
 
 ---
 
-**idp-smart v3.2** - *Soberanía Digital y Precisión Extrema asistida por Motores Híbridos IA.*
+**idp-smart v3.4** - *Soberanía Digital y Precisión Extrema con Orquestación Multi-Acto.*

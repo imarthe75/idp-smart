@@ -1,0 +1,98 @@
+.layout-wrapper {
+  min-height: 100vh;
+  background-color: var(--bg-color);
+}
+
+.sidebar {
+  width: 280px;
+  box-shadow: 4px 0 10px rgb(0 0 0 / 0.05);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  
+  .logo {
+    padding: 1rem 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+}
+
+.card-rpp {
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e1e8f0;
+  padding: 2rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  margin-bottom: 1.5rem;
+  
+  h3.title-rpp {
+    color: var(--primary-color);
+    font-size: 1.25rem;
+    font-weight: 800;
+  }
+}
+
+.field label {
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.nav-button {
+    margin-bottom: 0.5rem;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    
+    &:hover {
+        background: #f8fafc !important;
+        transform: translateX(4px);
+    }
+}
+
+.active-nav {
+    background: #eff6ff !important;
+    color: var(--primary-color) !important;
+    border-right: 3px solid var(--primary-color) !important;
+    border-radius: 10px 0 0 10px !important;
+}
+
+.status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+}
+
+.pulse-blue {
+    background: #3b82f6; box-shadow: 0 0 0 rgba(59, 130, 246, 0.4);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0px rgba(59, 130, 246, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+    100% { box-shadow: 0 0 0 0px rgba(59, 130, 246, 0); }
+}
+
+.truncate {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+::ng-deep {
+    .p-multiselect {
+        border-radius: 12px; border-width: 2px;
+        &:hover { border-color: var(--primary-color); }
+    }
+    
+    .p-progressbar {
+        height: 6px !important; border-radius: 3px !important;
+        .p-progressbar-value { background-color: var(--primary-color) !important; }
+    }
+    
+    .p-dialog .p-dialog-header { border-bottom: 1px solid #f1f5f9; padding: 1.5rem; }
+    .p-dialog .p-dialog-content { padding: 1.5rem; }
+    
+    .p-datatable .p-datatable-thead > tr > th {
+        font-weight: 800; font-size: 0.75rem; text-transform: uppercase; color: #64748b;
+    }
+}

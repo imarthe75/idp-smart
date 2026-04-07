@@ -66,8 +66,8 @@ def test_config() -> bool:
     
     try:
         print(f"LLM Provider: {settings.llm_provider}")
-        print(f"LocalAI URL: {settings.localai_base_url}")
-        print(f"Modelo: {settings.localai_model}")
+        print(f"LocalAI URL: {settings.localai_url}")
+        print(f"Modelo: {settings.model_reasoning_name}")
         print(f"Temperature: {settings.localai_temperature}")
         print(f"Max Tokens: {settings.localai_max_tokens}")
         print(f"Timeout: {settings.localai_timeout}s")
@@ -93,7 +93,7 @@ def test_connectivity() -> bool:
     try:
         import requests
         
-        url = f"{settings.localai_base_url}/models"
+        url = f"{settings.localai_url}/models"
         print(f"Conectando a: {url}")
         
         response = requests.get(url, timeout=5)

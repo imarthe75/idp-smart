@@ -796,12 +796,12 @@ export default function App() {
               <div className="submit-row">
                 <button
                   onClick={handleSubmit}
-                  disabled={!selectedAct || (files.length === 0 && !reusingDoc) || submitting}
+                  disabled={selectedActs.length === 0 || (files.length === 0 && !reusingDoc) || submitting}
                   className="btn-submit"
                 >
                   {submitting ? '⟳ Enviando…' : 
                    reusingDoc ? 'Iniciar con Documento Reutilizado' :
-                   `Iniciar Extracción${files.length > 1 ? ` (${files.length})` : ''}`}
+                   `Iniciar Extracción${selectedActs.length > 1 ? ` (${selectedActs.length} actos)` : ''}`}
                 </button>
               </div>
             </div>

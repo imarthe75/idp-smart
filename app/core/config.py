@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     runpod_pod_llm_id: str = ""         # ID del pod de LLM (VLLM)
     runpod_idle_timeout: int = 300      # segundos de inactividad → apagar
     # URLs heredadas (compatibilidad)
+    google_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
+    # ── Docling Remote Server (Microservicio) ─────────────────────────────────
+    docling_server_url: Optional[str] = "http://docling_serve:8001/extract"
     runpod_docling_url: Optional[str] = None
     runpod_vision_url: Optional[str] = None
     runpod_llm_url: Optional[str] = None
@@ -73,9 +79,18 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = None
     claude_model: str = "claude-3-5-sonnet-20241022"
 
-    # ── OpenAI ────────────────────────────────────────────────────────────────
+    # ── OpenAI / OpenRouter / Together ────────────────────────────────────────
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
+    openai_base_url: Optional[str] = None # Para OpenRouter poner https://openrouter.ai/api/v1
+
+    # ── Groq (Llama-3 / Mixtral) ──────────────────────────────────────────────
+    groq_api_key: Optional[str] = None
+    groq_model: str = "llama-3.1-70b-versatile"
+
+    # ── Alibaba DashScope (Qwen) ────────────────────────────────────────────────
+    alibaba_api_key: Optional[str] = None
+    alibaba_model: str = "qwen-plus"
 
     # ── AWS ───────────────────────────────────────────────────────────────────
     aws_region: str = "us-east-1"
@@ -155,6 +170,10 @@ class Settings(BaseSettings):
             return self.gemini_model
         if self.llm_provider == "anthropic":
             return self.claude_model
+        if self.llm_provider == "groq":
+            return self.groq_model
+        if self.llm_provider == "alibaba":
+            return self.alibaba_model
         if self.llm_provider == "openai":
             return self.openai_model
         if self.llm_provider in ("runpod", "vllm", "local"):

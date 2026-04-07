@@ -8,8 +8,8 @@ version: '3.8'
 
 services:
   localai:
-    # Imagen con CUDA (GPU support)
-    image: localai/localai:latest-aio-cuda-12
+    # Imagen CPU (Detección automática)
+    image: localai/localai:latest-aio-cpu
     container_name: idp_localai
     ports:
       - "8080:8080"
@@ -39,13 +39,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Limites de recursos (ajustar según tu GPU)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
 volumes:
   localai_cache:

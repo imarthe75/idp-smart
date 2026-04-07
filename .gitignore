@@ -79,6 +79,10 @@ localai/config/idp-smart-*.yaml
 # Benchmark results
 **/benchmark_results/
 
+# Documentos de muestra (PDFs/TIFs para pruebas — nunca se versionan)
+samples/
+app/samples/
+
 # System and hidden files
 ._*
 .DS_Store

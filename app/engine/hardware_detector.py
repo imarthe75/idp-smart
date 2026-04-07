@@ -111,14 +111,11 @@ def detect_hardware() -> HardwareProfile:
         if env_chunk.isdigit():
             pdf_chunk_size = int(env_chunk)
         else:
-            # --- Cálculo de Tamaño de Chunk (Seguridad RAM 2GB) ---
-            # 48GB total -> ~24 chunks máx para seguridad absoluta.
-            max_chunks_by_ram = max(4, int(ram_gb // 2.0))
+            # Estimación por CPU (más agresiva para 12+ núcleos)
+            ideal_chunks_by_cpu = max(10, min(40, 10 + (cpu_cores - 4) * 2))
             
-            # Estimación por CPU (base 6, +1 cada 2 núcleos extra)
-            ideal_chunks_by_cpu = max(6, min(30, 6 + (cpu_cores - 8) // 2))
-            
-        # El chunk final respeta el límite de RAM
+        # El chunk final respeta el límite de RAM (incrementado a 1.2GB por chunk de margen)
+        max_chunks_by_ram = max(10, int(ram_gb // 1.2))
         pdf_chunk_size = min(ideal_chunks_by_cpu, max_chunks_by_ram)
         
         # --- Estrategia "High-Power Serial" (1 Batch @ 12 Threads) ---

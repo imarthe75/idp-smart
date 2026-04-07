@@ -2,410 +2,228 @@ import os
 import re
 import json
 import base64
+import time
+import uuid
+import logging
+from functools import wraps
 from core.config import settings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
 from langchain.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage
-from engine.ensemble import get_ensemble_llm  # NUEVO: Soporte ensemble
+from engine.ensemble import get_ensemble_llm
 
 def create_simplified_json(extracted_data: dict, schema: dict) -> dict:
     """
-    Transforma uuid → value pairs a label → value pairs humanizados.
-    NUNCA retorna null: siempre retorna un dict válido, aunque sea vacío.
-    
-    Este es SOLO un transformador de presentación, no cambia los datos.
+    Transforma uuid→value pairs extraídos por el LLM a label→value pairs humanizados.
+
+    Reglas:
+    - Todos los UUIDs (incluso en dicts anidados) se reemplazan por su label del schema.
+    - Los valores null/None se OMITEN del resultado final para mantener el JSON limpio.
+    - Si ningún campo tiene valor real, retorna {"status": "Sin datos extraídos"}.
     """
-    simplified = {}
-    uuid_to_label_map = {}
-    
-    # Fase 1: Construir mapa completo de uuid → label desde el esquema
+    uuid_to_label_map: dict = {}
+
+    # ── Paso 1: Construir mapa UUID→Label recorriendo todo el schema ──────────
     def build_uuid_map(node):
-        """Recorre esquema y mapea uuid → label"""
         if isinstance(node, dict):
-            uuid_val = node.get("uuid")
-            label_val = node.get("label")
-            if uuid_val and label_val:
-                uuid_to_label_map[uuid_val] = label_val
-            
-            # Continuar en propiedades
+            u = node.get("uuid")
+            l = node.get("label")
+            if u and l:
+                uuid_to_label_map[u] = l
             for v in node.values():
                 build_uuid_map(v)
         elif isinstance(node, list):
             for item in node:
                 build_uuid_map(item)
-    
+
     build_uuid_map(schema)
-    
-    # Fase 2: Transformar datos extraídos usando el mapa
+
+    # ── Paso 2: Transformar extracted_data resolviendo UUIDs y filtrando nulls ─
+    _EMPTY = (None, "", [], {})
+
+    def resolve_key(k: str) -> str:
+        """Reemplaza un UUID por su label; si no está en el mapa, lo deja tal cual."""
+        return uuid_to_label_map.get(k, k)
+
     def transform_value(value):
-        """Convierte valor recursivamente: si es dict con uuids, substituye por labels"""
         if isinstance(value, dict):
-            transformed = {}
+            result = {}
             for k, v in value.items():
-                # Si la clave es un uuid, usa su label
-                label_key = uuid_to_label_map.get(k, k)
-                transformed[label_key] = transform_value(v)
-            return transformed
+                transformed = transform_value(v)
+                if transformed not in _EMPTY:          # omitir nulls anidados
+                    result[resolve_key(k)] = transformed
+            return result or None                       # dict vacío → None (se filtrará)
         elif isinstance(value, list):
-            # Para arrays, transforma cada elemento
-            return [transform_value(item) for item in value]
-        else:
-            # Valor primitivo
-            return value
-    
-    # Fase 3: Inyectar datos transformados
-    for uuid_key, value in extracted_data.items():
-        label_key = uuid_to_label_map.get(uuid_key, uuid_key)
-        transformed_value = transform_value(value)
-        simplified[label_key] = transformed_value
-    
-    # Fase 4: Garantizar que NUNCA retorna None/null
-    # Si está vacío, retorna estructura mínima válida
-    if not simplified:
-        simplified = {
-            "Estado": "Sin datos extraídos del documento",
-            "Nota": "Verifica que el documento contenga la información esperada"
-        }
-    
-    return simplified
+            items = [transform_value(i) for i in value if transform_value(i) not in _EMPTY]
+            return items or None
+        return value
 
-def get_llm():
-    """
-    Instancia el LLM configurado en Settings.
-    Soporta Google Gemini, Ollama (Legacy), LocalAI, RunPod y Ensemble.
-    Valores aceptados para LLM_PROVIDER: gemini | google | local | localai | runpod | ollama
-    """
+    simplified: dict = {}
+    for k, v in extracted_data.items():
+        transformed = transform_value(v)
+        if transformed not in _EMPTY:                  # omitir campos nulos en raíz
+            simplified[resolve_key(k)] = transformed
+
+    return simplified if simplified else {"status": "Sin datos extraídos"}
+
+def get_llm(llm_provider: str = None, llm_model: str = None):
+    """Retorna instancia LLM con soporte para overrides."""
+    provider = llm_provider or settings.llm_provider
+    model_name = llm_model or settings.current_llm_model
+    
     try:
-        # ¿Usar ensemble?
-        if settings.use_ensemble:
-            print(f"ENSEMBLE activado: {settings.ensemble_provider} ({settings.ensemble_strategy})")
-            return get_ensemble_llm(use_ensemble=True)
-
-        # Sino, usar LLM simple
-        if settings.llm_provider == "localai":
-            print(f"Conectando a LocalAI en {settings.localai_url} con modelo {settings.model_reasoning}...")
-            return ChatOpenAI(
-                base_url=settings.localai_url,
-                api_key="not-needed",
-                model=settings.model_reasoning,
-                temperature=settings.localai_temperature,
-                max_tokens=settings.localai_max_tokens,
-                timeout=settings.localai_timeout,
-                model_kwargs={"response_format": {"type": "json_object"}},
-                verbose=True
-            )
-        elif settings.llm_provider == "runpod":
-            print(f"Conectando a RunPod en {settings.runpod_llm_url}...")
-            return ChatOpenAI(
-                base_url=settings.runpod_llm_url,
-                api_key=settings.runpod_api_key,
-                model=settings.llm_runpod_model,
-                temperature=settings.localai_temperature,
-                max_tokens=4096,
-                timeout=settings.proxy_timeout_s,
-                verbose=True
-            )
-        elif settings.llm_provider == "ollama":
-            print(f"Conectando a Ollama en {settings.ollama_base_url} con modelo {settings.ollama_model}...")
-            return ChatOllama(
-                base_url=settings.ollama_base_url,
-                model=settings.ollama_model,
-                temperature=0
-            )
-        else:
-            # Gemini (valores aceptados: 'gemini' o 'google' por retrocompatibilidad)
-            if not settings.google_api_key:
-                print("Error: No se ha configurado la GOOGLE_API_KEY.")
-                return None
-            os.environ["GOOGLE_API_KEY"] = settings.google_api_key
-            gemini_model = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
-            print(f"Conectando a Google Gemini ({gemini_model})...")
-            return ChatGoogleGenerativeAI(
-                model=gemini_model,
-                temperature=0
-            )
+        if provider == "google":
+            return ChatGoogleGenerativeAI(model=model_name, google_api_key=settings.google_api_key, temperature=0)
+        elif provider == "openai":
+            return ChatOpenAI(model=model_name, api_key=settings.openai_api_key, base_url=settings.openai_base_url, temperature=0)
+        elif provider == "anthropic":
+            return ChatAnthropic(model=model_name, api_key=settings.anthropic_api_key, temperature=0)
+        elif provider == "groq":
+            return ChatGroq(model=model_name, api_key=settings.groq_api_key, temperature=0)
+        elif provider == "alibaba":
+            return ChatOpenAI(model=model_name, api_key=settings.alibaba_api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", temperature=0)
+        elif provider == "ollama":
+            return ChatOllama(base_url=settings.ollama_base_url, model=settings.ollama_model, temperature=0)
     except Exception as e:
-        print(f"Error cargando el LLM ({settings.llm_provider}): {e}")
-        return None
-
-def minify_schema(schema):
-    """
-    Minimiza el esquema JSON para el LLM. Elimina toda la configuración de interfaz de usuario
-    y mantiene estrictamente los UUIDs, etiquetas y jerarquía que el LLM necesita para iterar.
-    """
-    import copy
+        print(f"Error cargando LLM {provider}: {e}")
+        return ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=settings.google_api_key)
     
-    if isinstance(schema, dict):
-        # Si es el root object (usualmente tiene 'containers')
-        if "containers" in schema:
-            return {"containers": [minify_schema(c) for c in schema.get("containers", [])]}
+    return ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=settings.google_api_key)
+
+def extract_form_data(markdown_content: str, json_schema: dict, visual_analysis: str = "", image_paths: list = [], llm_provider: str = None, llm_model: str = None, act_id: str = None) -> dict:
+    """Extrae datos usando el LLM seleccionado con contexto legal expandido."""
+    try:
+        llm = get_llm(llm_provider, llm_model)
         
-        # Si es un contenedor
-        minified = {}
-        if "uuid" in schema: minified["uuid"] = schema["uuid"]
-        if "label" in schema: minified["label"] = schema["label"]
-        if "repetitiva" in schema: minified["repetitiva"] = schema["repetitiva"]
+        # Cargar contexto legal si existe
+        legal_hint = ""
+        if act_id:
+            try:
+                import json
+                base_dir = os.path.dirname(__file__)
+                ctx_path = os.path.join(base_dir, "legal_context.json")
+                if os.path.exists(ctx_path):
+                    with open(ctx_path, 'r', encoding='utf-8') as f:
+                        all_ctx = json.load(f)
+                        act_info = all_ctx.get(act_id.lower())
+                        if act_info:
+                            sections = sorted(list(set([i['section'] for i in act_info])))
+                            legal_hint = f"\n--- CONTEXTO LEGAL DEL ACTO ({act_id.upper()}) ---\n"
+                            legal_hint += f"Este documento debe contener información para las siguientes secciones:\n"
+                            legal_hint += "- " + "\n- ".join(sections[:20]) + "\n"
+            except: pass
+
+        schema_min = minify_schema(json_schema)
+        schema_prompt = json.dumps(schema_min, indent=2)
         
-        if "controls" in schema:
-            minified["controls"] = []
-            for ctrl in schema["controls"]:
-                m_ctrl = {}
-                if "uuid" in ctrl: m_ctrl["uuid"] = ctrl["uuid"]
-                if "label" in ctrl: m_ctrl["label"] = ctrl["label"]
-                if "type" in ctrl: m_ctrl["type"] = ctrl["type"]
-                if "maxLength" in ctrl: m_ctrl["maxLength"] = ctrl["maxLength"]
-                minified["controls"].append(m_ctrl)
-            return minified
-            
-        # Fallback para estructuras no reconocidas o anidadas
-        for k, v in schema.items():
-            if k not in ["style", "width", "visible", "disabled", "className", "icon", "description", "colSpan"]:
-                minified[k] = minify_schema(v)
-        return minified
+        prompt = PromptTemplate.from_template("""
+        IDENTIDAD: Eres un Analista Registral Experto en el Registro Público de la Propiedad.
+        MISIÓN: Extraer valores precisos de documentos notariales para inyectarlos en una Base de Datos técnica.
         
-    elif isinstance(schema, list):
-        return [minify_schema(item) for item in schema]
+        {legal_hint}
         
-    return schema
-
-def convert_to_json_schema(schema_minified: dict) -> dict:
-    """
-    Convierte el esquema minimizado de rpp a un esquema JSON estándar
-    para forzar la gramática GBNF en LocalAI.
-    """
-    properties = {}
-    required = []
-
-    # Procesar contenedores del root
-    if "containers" in schema_minified:
-        for container in schema_minified["containers"]:
-            uuid = container.get("uuid")
-            if not uuid: continue
+        REGLAS CRÍTICAS:
+        1. NO MODIFIQUES EL ESQUEMA. Retorna solo los valores para los UUIDs proporcionados.
+        2. EXTRACCIÓN LITERAL: No resumas nombres. Extrae tal cual aparece (Mayúsculas, acentos).
+        3. DATOS VACÍOS: Si un campo no existe, déjalo como null o cadena vacía.
+        4. ESTRUCTURA DE SALIDA: Retorna ÚNICAMENTE un JSON plano {{ "UUID": "VALOR" }}.
+        
+        ESQUEMA TÉCNICO (UUIDs a llenar):
+        {schema}
+        
+        CONTENIDO DEL DOCUMENTO:
+        {content}
+        
+        INSTRUCCIÓN FINAL: Tu respuesta debe ser estrictamente el objeto JSON. Sin explicaciones.
+        """)
+        
+        chain = prompt | llm
+        
+        # --- LOGICA DE PROCESAMIENTO POR TROZOS (CHUNKING) PARA DOCUMENTOS LARGOS ---
+        # 60,000 caracteres ~= 15k-20k tokens (margen de seguridad para la mayoría de modelos)
+        CHUNK_LIMIT = 60000 
+        OVERLAP = 5000
+        
+        if len(markdown_content) <= CHUNK_LIMIT:
+            # Procesamiento estándar (un solo bloque)
+            response = chain.invoke({
+                "schema": schema_prompt,
+                "content": markdown_content,
+                "legal_hint": legal_hint
+            })
+            return {"fields": parse_llm_json(response)}
+        else:
+            # Procesamiento iterativo por trozos
+            print(f"📦 [AGENT] Documento largo ({len(markdown_content)} chars). Iniciando extracción por fragmentos...")
+            full_extracted_data = {}
             
-            is_repetitive = container.get("repetitiva", False)
+            # Dividir en segmentos con solapamiento
+            chunks = []
+            for i in range(0, len(markdown_content), CHUNK_LIMIT - OVERLAP):
+                chunks.append(markdown_content[i:i + CHUNK_LIMIT])
             
-            # Sub-propiedades (controles o sub-contenedores)
-            sub_props = {}
-            if "controls" in container:
-                for ctrl in container["controls"]:
-                    ctrl_uuid = ctrl.get("uuid")
-                    if ctrl_uuid:
-                        sub_props[ctrl_uuid] = {"type": ["string", "number", "null"]}
+            for idx, chunk_content in enumerate(chunks):
+                print(f"🧠 [AGENT] Procesando fragmento {idx+1}/{len(chunks)} ({len(chunk_content)} chars)...")
+                try:
+                    res_chunk = chain.invoke({
+                        "schema": schema_prompt,
+                        "content": chunk_content,
+                        "legal_hint": legal_hint
+                    })
+                    chunk_data = parse_llm_json(res_chunk)
+                    # Merge inteligente: Conservar valores no nulos
+                    for k, v in chunk_data.items():
+                        if v and not full_extracted_data.get(k):
+                            full_extracted_data[k] = v
+                except Exception as ce:
+                    print(f"⚠️ [AGENT] Error en fragmento {idx+1}: {ce}")
             
-            if is_repetitive:
-                properties[uuid] = {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": sub_props
-                    }
-                }
-            else:
-                properties[uuid] = {
-                    "type": "object",
-                    "properties": sub_props
-                }
+            return {"fields": full_extracted_data}
             
-            required.append(uuid)
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "quota" in error_msg.lower():
+            print(f"⚠️ [QUOTA EXCEEDED] Reintentando en 60s por error 429: {error_msg}")
+            time.sleep(60)
+            return extract_form_data(markdown_content, json_schema, visual_analysis, image_paths, llm_provider, llm_model, act_id)
+        
+        print(f"Error en extracción experta: {e}")
+        return {"fields": {}}
+
+def parse_llm_json(response) -> dict:
+    """Helper para limpiar y parsear la respuesta del LLM."""
+    text = response.content if hasattr(response, 'content') else str(response)
     
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": required,
-        "additionalProperties": False
-    }
-
-from langchain_core.messages import HumanMessage
-import base64
-
-def extract_form_data(document_md: str, form_schema: dict, visual_analysis: str = "", image_paths: list[str] = []) -> dict:
-    """
-    [PASO 3: RAZONAMIENTO] Extrae datos del Markdown usando Esquema + Análisis Visual.
-    Implementa la lógica de 'Fusión Legal' (Multimodal en Gemini, Texto en otros).
-    """
-    # Detectar si tenemos OCR real o estamos en modo visión pura
-    is_ocr_available = document_md and len(document_md) > 200 and "# VISION SKIP" not in document_md
-    
-    transcription_instruction = ""
-    if not is_ocr_available:
-        transcription_instruction = """
-2️⃣ TRANSCRIPCIÓN ESTRUCTURADA (MARKDOWN):
-Genera una transcripción Markdown de alta fidelidad que capture el texto íntegro que observas en las imágenes.
-"""
-    else:
-        transcription_instruction = """
-2️⃣ NOTA DE TRANSCRIPCIÓN:
-Ya se cuenta con OCR de alta calidad. NO generes transcripción. Enfócate 100% en la precisión de los campos JSON.
-"""
-
-    template = """
-EXTRACCIÓN DE EXPERTO LEGAL (RECALL MÁXIMO) 
-
-Eres un experto en documentos notariales mexicanos. Tu misión es extraer CADA UNO de los datos solicitados en el esquema, sin omitir ningún registro, especialmente en secciones repetitivas de SOCIOS, ASOCIADOS, APODERADOS u OTORGANTES.
-
---- ESTRATEGIA DE EXTRACCIÓN (REPRODUCCIÓN FIEL) ---
-
-1️⃣ NO OMITAS REGISTROS:
-- Si el documento menciona varios socios fundadores, DEBES extraer TODOS sin excepción.
-- Si hay un representante legal, apoderado o gerente, inclúyelo en la sección correspondiente según su función legal.
-- Si la sección es un ARRAY ([{{...}}]), extrae TODOS los bloques individuales que encuentres.
-
-2️⃣ MAPEO SEMÁNTICO FLEXIBLE:
-- "Quien transmite/vende/dona" = Enajenante. "Quien recibe/compra/adquiere" = Adquiriente.
-- Formatos: NOMBRES EN MAYÚSCULAS. Fechas YYYY-MM-DD.
-
-3️⃣ TRANSCRIPCIÓN (SI SE REQUIERE):
-{transcription_instruction}
-
---- ESTRUCTURA DE RESPUESTA (OBLIGATORIA) ---
-Responde EXCLUSIVAMENTE con un JSON válido. Respeta la jerarquía del esquema: si un contenedor (UUID) tiene controles asociados, devuelve un objeto bajo ese UUID, no una lista plana.
-{{
-  "fields": {{
-    "uuid_contenedor_notario": {{ "uuid_estado": "VALOR", "uuid_nombre": "VALOR" }},
-    "uuid_seccion_socios": [ {{ "uuid_socio": "VALOR", "uuid_rfc": "VALOR" }} ]
-  }},
-  "full_markdown": "SKIP o transcripción visual detallada"
-}}
-
-EVIDENCIA VISUAL:
-{visual_analysis}
-
-ESQUEMA TÉCNICO:
-{form_schema}
-
-CONTENIDO DEL DOCUMENTO:
-{document_md}
-
-JSON DE RESPUESTA:
-"""
-    
-    llm = get_llm()
-    if not llm:
-        print("LLM no configurado.")
-        return {}
-    
-    minified_schema = minify_schema(form_schema)
-    schema_str = json.dumps(minified_schema, indent=2)
-    # Soporte para documentos masivos (500k chars)
-    # Escapar llaves para .format()
-    raw_md = (document_md or "")[:500000]
-    safe_markdown = raw_md.replace("{", "{{").replace("}", "}}")
-    
-    final_prompt = template.format(
-        transcription_instruction=transcription_instruction,
-        visual_analysis=visual_analysis or "No se proporcionó análisis adicional.",
-        form_schema=schema_str,
-        document_md=safe_markdown
-    )
-
-    import time
-    start_time = time.time()
-
-    # --- SEMÁFORO DISTRIBUIDO PARA COLA CLOUD (EVITAR 429) ---
-    # Limitar a solo 2 trabajadores simultáneos hablando con Google/Cloud
-    import redis
-    import time
-    
-    use_semaphore = settings.llm_provider in ("google", "gemini", "anthropic", "openai")
-    redis_client = None
-    if use_semaphore:
+    # Limpieza robusta de JSON (maneja bloques markdown ```json)
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
         try:
-            redis_client = redis.from_url(settings.valkey_url)
-        except: pass
-
-    response = None
-    max_retries = 3
-    retry_count = 0
-    
-    try:
-        if redis_client:
-            semaphore_name = f"sem:ai_concurrency:{settings.llm_provider}"
-            start_wait = time.time()
-            max_concurrent = int(os.environ.get("MAX_CLOUD_CONCURRENCY", "2"))
-            while True:
-                current_active = redis_client.get(semaphore_name)
-                if not current_active or int(current_active) < max_concurrent:
-                    redis_client.incr(semaphore_name)
-                    redis_client.expire(semaphore_name, 300)
-                    print(f"📡 [RateLimit] Slot adquirido para {settings.llm_provider}.")
-                    break
-                if time.time() - start_wait > 180: break
-                time.sleep(2)
-
-        # Pequeño stagger adicional para evitar ráfagas exactas
-        import random
-        time.sleep(random.uniform(0.1, 1.5))
-
-        # --- BUCLE DE REINTENTO ROBUSTO ---
-        while retry_count < max_retries:
+            return json.loads(match.group(0))
+        except:
             try:
-                if settings.llm_provider in ("gemini", "google") and image_paths:
-                    print(f"[Multimodal] Enviando {len(image_paths)} imagen(es) a Gemini (Intento {retry_count+1})...")
-                    content = [{"type": "text", "text": final_prompt}]
-                    for img_path in image_paths:
-                        if os.path.exists(img_path):
-                            with open(img_path, "rb") as f:
-                                img_data = base64.b64encode(f.read()).decode("utf-8")
-                                content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_data}"}})
-                    response = llm.invoke([HumanMessage(content=content)])
-                else:
-                    print(f"[Razonamiento] Enviando prompt ({settings.llm_provider}) (Intento {retry_count+1})...")
-                    response = llm.invoke([HumanMessage(content=final_prompt)])
-                
-                # Si llegamos aquí sin excepción, salimos del bucle de reintento
-                break
-            except Exception as e_retry:
-                retry_count += 1
-                if retry_count >= max_retries:
-                    print(f"❌ [ROBUSTEZ] Error fatal tras {max_retries} intentos: {e_retry}")
-                    raise e_retry
-                
-                backoff = (2 ** retry_count) + random.uniform(0, 1)
-                print(f"⚠️ [ROBUSTEZ] Error en LLM (Intento {retry_count}): {e_retry}. Reintentando en {backoff:.2f}s...")
-                time.sleep(backoff)
+                # Reparación agresiva si falla el JSON simple
+                cleaned = re.sub(r'//.*', '', match.group(0)) # quitar comentarios
+                return json.loads(cleaned)
+            except:
+                return {}
+    return {}
 
-    finally:
-        if redis_client:
-            redis_client.decr(semaphore_name)
-            print(f"📡 [RateLimit] Slot liberado para {settings.llm_provider}.")
-
-    if not response or not response.content:
-        print("❌ Error: Respuesta del LLM vacía o nula.")
-        return {}
-
-    elapsed = time.time() - start_time
-    print(f"✅ [Razonamiento] Completado en {elapsed:.2f}s")
-    
-    text_response = response.content.strip()
-    clean_text = text_response
-    if "```json" in clean_text:
-        clean_text = clean_text.split("```json")[-1].split("```")[0]
-    elif "```" in clean_text:
-        clean_text = clean_text.split("```")[-1].split("```")[0]
-    clean_text = clean_text.strip()
-    
-    try:
-        return json.loads(clean_text)
-    except Exception as e1:
-        print(f"❌ Intento 1 fallido de parseo LLM ({e1}). Intentando reparar...")
-        start_idx = text_response.find('{')
-        if start_idx != -1:
-            json_str = text_response[start_idx:]
-            open_braces = json_str.count('{') - json_str.count('}')
-            open_brackets = json_str.count('[') - json_str.count(']')
-            open_quotes = len(re.findall(r'(?<!\\)"', json_str)) % 2
-            json_str = re.sub(r'["}\]]\s*$', '', json_str)
-            if open_quotes: json_str += '"'
-            if open_brackets > 0: json_str += ']' * open_brackets
-            if open_braces > 0: json_str += '}' * open_braces
-            try:
-                extracted_json = json.loads(json_str)
-                print(f"✅ JSON reparado exitosamente")
-                return extracted_json
-            except Exception as e2:
-                print(f"❌ Intento 2 de reparación fallido: {e2}")
-                raise ValueError(f"No se pudo extraer un JSON válido del LLM tras reparación: {e2}")
-        
-        raise ValueError("No se encontró ninguna estructura JSON '{ ... }' en la respuesta del LLM.")
+# Mantener funciones auxiliares necesarias (minify_schema, etc)
+def minify_schema(schema):
+    import copy
+    m = {}
+    if isinstance(schema, dict):
+        if "uuid" in schema: m["uuid"] = schema["uuid"]
+        if "label" in schema: m["label"] = schema["label"]
+        if "controls" in schema: m["controls"] = [{"uuid": c["uuid"], "label": c["label"]} for c in schema["controls"]]
+        if "containers" in schema: m["containers"] = [minify_schema(c) for c in schema["containers"]]
+        # Recurse other keys
+        for k,v in schema.items():
+            if k not in ["uuid", "label", "controls", "containers", "style", "width", "visible"]:
+                m[k] = minify_schema(v)
+    elif isinstance(schema, list): return [minify_schema(i) for i in schema]
+    return m or schema

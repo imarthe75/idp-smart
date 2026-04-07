@@ -1,0 +1,42 @@
+/* Standard PrimeNG 20 Styles */
+@import "primeicons/primeicons.css";
+@import "primeflex/primeflex.css";
+
+/* RPP Theme Custom Colors (From Reference) */
+:root {
+  --primary-color: #00427c;
+  --accent-color: #B68400;
+  --bg-color: #fafafa;
+  --surface-ground: #ffffff;
+  --font-family: 'Roboto', sans-serif;
+  
+  /* PrimeNG Tokens override (Aura compatible) */
+  --p-primary-color: var(--primary-color);
+  --p-primary-color-text: #ffffff;
+  --p-button-primary-background: var(--primary-color);
+  --p-button-primary-border-color: var(--primary-color);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  background-color: var(--bg-color);
+  color: #1e293b;
+}
+
+/* Glassmorphism utility */
+.card-rpp {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  padding: 1.5rem;
+}
+
+.title-rpp {
+  color: var(--primary-color);
+  font-weight: 700;
+  border-bottom: 2px solid var(--accent-color);
+  display: inline-block;
+  padding-bottom: 4px;
+}
