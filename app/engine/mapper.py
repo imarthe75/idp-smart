@@ -1,9 +1,9 @@
-from core.minio_client import get_minio_client
+from core.storage_client import get_storage_client
 import json
 
 def get_json_schema(bucket: str, object_name: str) -> dict:
     """Extrae el JSON subido al endpoint para saber qué buscar del documento."""
-    client = get_minio_client()
+    client = get_storage_client()
     try:
         response = client.get_object(bucket, object_name)
         data = response.read()

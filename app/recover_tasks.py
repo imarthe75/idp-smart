@@ -26,7 +26,7 @@ async def recover_tasks():
     async with async_session() as session:
         # Buscamos tareas en el limbo
         query = text("""
-            SELECT task_id, json_minio_path, pdf_minio_path 
+            SELECT task_id, json_storage_path, pdf_storage_path 
             FROM idp_smart.document_extractions 
             WHERE status = 'PENDING_CELERY' OR status = 'INICIO'
         """)

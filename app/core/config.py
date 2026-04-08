@@ -21,12 +21,12 @@ class Settings(BaseSettings):
     db_name: str = "postgres"
     valkey_url: str = "redis://localhost:6379/0"
 
-    # ── MinIO ──────────────────────────────────────────────────────────────────
-    minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = "minio_user"
-    minio_secret_key: str = "minio_password"
-    minio_bucket: str = "idp-documents"
-    minio_secure: bool = False  # True solo si MinIO usa HTTPS en producción
+    # ── Almacenamiento (SeaweedFS S3) ──────────────────────────────────────────
+    storage_endpoint: str = "localhost:8333"
+    storage_access_key: str = "admin"
+    storage_secret_key: str = "seaweed_password123"
+    storage_bucket: str = "idp-documents"
+    storage_secure: bool = False
 
     # ── Selector de motores ────────────────────────────────────────────────────
     # OCR_ENGINE  : docling | google_doc_ai | aws_textract
@@ -157,9 +157,11 @@ class Settings(BaseSettings):
     aws_secret_access_key: str = ""
     aws_region: str = "us-east-1"
     
-    # Azure Document Intelligence (Layout)
-    azure_doc_endpoint: str = ""
-    azure_doc_key: str = ""
+    # ── Vertex AI (Google Cloud Platform) ──────────────────────────────────────
+    gcp_project_id: Optional[str] = None
+    gcp_location: str = "us-central1"
+    gcp_staging_bucket: Optional[str] = None  # Para PDFs multimodales
+    gcp_credentials_json: Optional[str] = None # Path al service account json
 
     # ── Celery & Infra ─────────────────────────────────────────────────────────
     worker_concurrency: int = 1
@@ -176,6 +178,8 @@ class Settings(BaseSettings):
             return self.alibaba_model
         if self.llm_provider == "openai":
             return self.openai_model
+        if self.llm_provider == "vertex":
+            return self.gemini_model
         if self.llm_provider in ("runpod", "vllm", "local"):
             return self.local_llm_model
         return "unknown"

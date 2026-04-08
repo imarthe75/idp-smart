@@ -8,7 +8,7 @@ x-worker-base: &worker-base
     - ./app:/app
   depends_on:
     - valkey
-    - minio
+    - seaweedfs_s3
   extra_hosts:
     - "host.docker.internal:host-gateway"
   command: celery -A worker.celery_app worker --loglevel=info --concurrency=1
@@ -18,12 +18,17 @@ x-worker-base: &worker-base
         # ARQUITECTURA NOTARIAL: 8 workers concurrentes x 6GB = 48GB
         memory: 6000M
 
+networks:
+  idp-smart-net:
+    driver: bridge
+
 services:
   valkey:
     image: valkey/valkey:7.2
     container_name: idp_valkey_v34
     ports: ["6379:6379"]
     restart: always
+    networks: [idp-smart-net]
 
   db:
     image: postgres:18
@@ -44,29 +49,48 @@ services:
       - ./db/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
       - postgres_data:/var/lib/postgresql
     restart: always
+    networks: [idp-smart-net]
 
-  minio:
-    image: minio/minio:latest
-    container_name: idp_minio
-    ports: ["9000:9000", "9001:9001"]
-    environment:
-      - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=minio_password123
-      - MINIO_NOTIFY_WEBHOOK_ENABLE_primary=on
-      - MINIO_NOTIFY_WEBHOOK_ENDPOINT_primary=http://api:8000/api/v1/internal/minio-event
-    command: server /data --console-address ":9001"
-    volumes: ["minio_data:/data"]
+  # --- SEAWEEDFS: ALMACENAMIENTO DE ALTO RENDIMIENTO (Reemplazo de MinIO) ---
+  seaweedfs_master:
+    image: chrislusf/seaweedfs:latest
+    container_name: idp_weed_master
+    command: master -ip=seaweedfs_master
+    ports: ["9333:9333"]
     restart: always
+    networks: [idp-smart-net]
 
-  minio_setup:
-    image: minio/mc
-    depends_on: [minio]
-    entrypoint: >
-      /bin/sh -c "
-      until (/usr/bin/mc alias set myminio http://minio:9000 admin minio_password123) do sleep 1; done;
-      /usr/bin/mc mb -p myminio/idp-documents;
-      /usr/bin/mc event add myminio/idp-documents arn:minio:sqs::primary:webhook --event put;
-      "
+  seaweedfs_volume:
+    image: chrislusf/seaweedfs:latest
+    container_name: idp_weed_volume
+    command: volume -mserver=seaweedfs_master:9333 -port=8080 -ip=seaweedfs_volume
+    depends_on: [seaweedfs_master]
+    volumes: ["seaweed_data:/data"]
+    restart: always
+    networks: [idp-smart-net]
+
+  seaweedfs_filer:
+    image: chrislusf/seaweedfs:latest
+    container_name: idp_weed_filer
+    command: filer -master=seaweedfs_master:9333
+    ports: ["8888:8888"]
+    volumes:
+      - ./filer.toml:/etc/seaweedfs/filer.toml
+    depends_on: [seaweedfs_master, seaweedfs_volume]
+    restart: always
+    networks: [idp-smart-net]
+
+  seaweedfs_s3:
+    image: chrislusf/seaweedfs:latest
+    container_name: idp_weed_s3
+    command: s3 -filer=seaweedfs_filer:8888 -ip.bind=0.0.0.0
+    ports: ["8333:8333"]
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=seaweed_password123
+    depends_on: [seaweedfs_filer]
+    restart: always
+    networks: [idp-smart-net]
 
   api:
     build: .
@@ -75,7 +99,22 @@ services:
     volumes: ["./app:/app"]
     ports: ["8000:8000"]
     env_file: [.env]
-    depends_on: [valkey, minio]
+    depends_on: [valkey, seaweedfs_s3]
+    networks: [idp-smart-net]
+
+  seaweedfs_setup:
+    image: alpine:latest
+    container_name: idp_weed_setup
+    depends_on: [seaweedfs_filer]
+    networks: [idp-smart-net]
+    entrypoint: >
+      /bin/sh -c "
+      apk add --no-cache curl;
+      echo 'Esperando a SeaweedFS Filer...';
+      until curl -s -f http://seaweedfs_filer:8888/ > /dev/null; do sleep 2; done;
+      curl -X POST http://seaweedfs_filer:8888/idp-documents/;
+      echo 'Bucket idp-documents listo.';
+      "
 
   celery_beat:
     build: .
@@ -85,11 +124,8 @@ services:
     env_file: [.env]
     depends_on: [valkey]
     restart: always
+    networks: [idp-smart-net]
 
-  # --- ARQUITECTURA ESCALADA: 8 Workers Potentes (9 cores / 25GB RAM cada uno) ---
-  # Utilizando 72 cores de los 80 disponibles para dejar margen al OS y servicios base.
-  # --- MICROSERVICIO DE OCR: Docling Serve (Pesado) ---
-  # Centraliza el procesamiento de Docling para evitar cargarlo en cada worker.
   docling_serve:
     build:
       context: .
@@ -101,15 +137,12 @@ services:
     cpuset: "0-39"
     environment: 
       - OMP_NUM_THREADS=10
-      - DOCLING_SERVER_URL=
-
     deploy:
       resources:
         limits:
           memory: 80000M
+    networks: [idp-smart-net]
 
-  # --- WORKERS SLIM: 8 Workers Ligeros (No cargan Docling en memoria) ---
-  # Utilizan un promedio de 4 cores cada uno para orquestación y razonamiento.
   worker_1:
     <<: *worker-base
     container_name: idp_worker_1
@@ -119,92 +152,44 @@ services:
       resources:
         limits:
           memory: 10000M
-    depends_on: [valkey, minio, docling_serve]
+    depends_on: [valkey, seaweedfs_s3, docling_serve]
+    networks: [idp-smart-net]
 
   worker_2:
     <<: *worker-base
     container_name: idp_worker_2
     cpuset: "44-47"
-    environment: [OMP_NUM_THREADS=4]
-    deploy:
-      resources:
-        limits:
-          memory: 10000M
-    depends_on: [valkey, minio, docling_serve]
-
+    networks: [idp-smart-net]
   worker_3:
     <<: *worker-base
     container_name: idp_worker_3
     cpuset: "48-51"
-    environment: [OMP_NUM_THREADS=4]
-    deploy:
-      resources:
-        limits:
-          memory: 10000M
-    depends_on: [valkey, minio, docling_serve]
-
+    networks: [idp-smart-net]
   worker_4:
     <<: *worker-base
     container_name: idp_worker_4
     cpuset: "52-55"
-    environment: [OMP_NUM_THREADS=4]
-    deploy:
-      resources:
-        limits:
-          memory: 10000M
-    depends_on: [valkey, minio, docling_serve]
-
+    networks: [idp-smart-net]
   worker_5:
     <<: *worker-base
     container_name: idp_worker_5
     cpuset: "56-59"
-    environment: [OMP_NUM_THREADS=4]
-    deploy:
-      resources:
-        limits:
-          memory: 10000M
-    depends_on: [valkey, minio, docling_serve]
-
+    networks: [idp-smart-net]
   worker_6:
     <<: *worker-base
     container_name: idp_worker_6
     cpuset: "60-63"
-    environment: [OMP_NUM_THREADS=4]
-    deploy:
-      resources:
-        limits:
-          memory: 10000M
-    depends_on: [valkey, minio, docling_serve]
-
+    networks: [idp-smart-net]
   worker_7:
     <<: *worker-base
     container_name: idp_worker_7
     cpuset: "64-67"
-    environment: [OMP_NUM_THREADS=4]
-    deploy:
-      resources:
-        limits:
-          memory: 10000M
-    depends_on: [valkey, minio, docling_serve]
-
+    networks: [idp-smart-net]
   worker_8:
     <<: *worker-base
     container_name: idp_worker_8
     cpuset: "68-71"
-    environment: [OMP_NUM_THREADS=4]
-    deploy:
-      resources:
-        limits:
-          memory: 10000M
-    depends_on: [valkey, minio, docling_serve]
-
-  # localai:
-  #   image: localai/localai:latest
-  #   container_name: idp_localai
-  #   ports: ["8080:8080"]
-  #   environment: [THREADS=4, MODELS_PATH=/models]
-  #   volumes: ["./localai/models_clean:/models", "localai_data:/build"]
-  #   restart: always
+    networks: [idp-smart-net]
 
   frontend:
     image: node:lts
@@ -214,6 +199,7 @@ services:
     volumes: ["./frontend:/app"]
     ports: ["5173:5173"]
     depends_on: [api]
+    networks: [idp-smart-net]
 
   frontend_angular:
     image: node:20
@@ -223,8 +209,9 @@ services:
     volumes: ["./frontend-angular:/app"]
     ports: ["5174:5174"]
     depends_on: [api]
+    networks: [idp-smart-net]
 
 volumes:
-  minio_data:
+  seaweed_data:
   postgres_data:
   localai_data:

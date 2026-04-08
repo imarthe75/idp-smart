@@ -32,7 +32,7 @@ class DoclingVisionOptimized:
         """
         Inicia el motor Docling con soporte para saneamiento de memoria y ARQUITECTURA AUTOADAPTABLE.
         """
-        self.minio_client = None
+        self.storage_client = None
         from engine.hardware_detector import detect_hardware
         self.profile = detect_hardware()
         
@@ -80,20 +80,20 @@ class DoclingVisionOptimized:
             logger.error(f"❌ Error lote local: {e}")
             raise RuntimeError(f"Fallo en lote OCR: {e}")
 
-    def _download_from_minio(self, object_name: str) -> str:
+    def _download_from_storage(self, object_name: str) -> str:
         """Descarga preservando la extensión real."""
-        from core.minio_client import get_minio_client
-        client = get_minio_client()
+        from core.storage_client import get_storage_client
+        client = get_storage_client()
         ext = ".pdf"
         if object_name.lower().endswith((".tif", ".tiff")):
             ext = ".tif"
         
         tmp_p = os.path.join(tempfile.gettempdir(), f"raw_{uuid.uuid4()}{ext}")
-        client.fget_object(settings.minio_bucket, object_name, tmp_p)
+        client.fget_object(settings.storage_bucket, object_name, tmp_p)
         return tmp_p
 
     def _extract_markdown_local(self, object_name: str) -> tuple[str, int, str]:
-        local_path = self._download_from_minio(object_name)
+        local_path = self._download_from_storage(object_name)
         pdf_path_to_process = local_path
         tmp_files = [local_path]
         strategy = "Serial-Base"
@@ -112,13 +112,13 @@ class DoclingVisionOptimized:
                     
                     # Persistencia dual: Guardar PDF en MinIO para descarga y auditoría
                     try:
-                        from core.minio_client import get_minio_client, upload_file_to_minio
-                        minio_client = get_minio_client()
+                        from core.storage_client import get_storage_client, upload_file_to_storage
+                        storage_client = get_storage_client()
                         # Extraer task_id del object_name (formato: task_id/filename.tif)
                         tid = object_name.split("/")[0] if "/" in object_name else "audit"
-                        pdf_minio_path = f"{tid}/source_converted.pdf"
-                        upload_file_to_minio(minio_client, pdf_minio_path, pdf_bytes, "application/pdf")
-                        logger.info(f"📤 [PERSISTENCE] PDF convertido guardado en MinIO: {pdf_minio_path}")
+                        pdf_storage_path = f"{tid}/source_converted.pdf"
+                        upload_file_to_storage(storage_client, pdf_storage_path, pdf_bytes, "application/pdf")
+                        logger.info(f"📤 [PERSISTENCE] PDF convertido guardado en MinIO: {pdf_storage_path}")
                     except Exception as e:
                         logger.warning(f"⚠️ Fallo al persistir PDF en MinIO: {e}")
                         
@@ -192,7 +192,7 @@ class DoclingVisionOptimized:
             writer.write(f_out)
         return chunk_p
 
-    def extract_markdown_from_minio_sync(self, object_name: str) -> tuple[str, int, str]:
+    def extract_markdown_from_storage(self, object_name: str) -> tuple[str, int, str]:
         """
         Deriva la extracción a un microservicio remoto si está configurado,
         de lo contrario intenta el procesamiento local.
@@ -201,7 +201,7 @@ class DoclingVisionOptimized:
             try:
                 import requests
                 logger.info(f"🌐 [REMOTE] Llamando a microservicio Docling: {settings.docling_server_url}")
-                payload = {"bucket": settings.minio_bucket, "object_name": object_name}
+                payload = {"bucket": settings.storage_bucket, "object_name": object_name}
                 # Timeout de proxy largo para documentos grandes
                 resp = requests.post(settings.docling_server_url, params=payload, timeout=settings.proxy_timeout_s * 2)
                 resp.raise_for_status()
@@ -310,8 +310,8 @@ class DoclingVisionOptimized:
 
 vision_engine = DoclingVisionOptimized()
 
-def extract_markdown_from_minio_sync(object_name: str) -> tuple[str, int, str]:
-    return vision_engine.extract_markdown_from_minio_sync(object_name)
+def extract_markdown_from_storage(object_name: str) -> tuple[str, int, str]:
+    return vision_engine.extract_markdown_from_storage(object_name)
 
 def extract_visual_analysis_sync(pdf_path: str) -> str:
     return vision_engine.extract_visual_analysis_sync(pdf_path)

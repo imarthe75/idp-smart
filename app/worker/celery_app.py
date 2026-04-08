@@ -1,7 +1,7 @@
 from celery import Celery
 from core.config import settings
 from core.idp_logger import log_event, timed_stage, build_simplified_json
-from core.minio_client import get_minio_client, upload_file_to_minio
+from core.storage_client import get_storage_client, upload_file_to_storage
 from sqlalchemy import create_engine, text
 import json
 import os
@@ -19,7 +19,7 @@ logger = logging.getLogger("idp-smart")
 
 # Engine Components
 from engine.vision_optimized import (
-    extract_markdown_from_minio_sync as extract_markdown_from_minio,
+    extract_markdown_from_storage as extract_markdown_from_storage,
     extract_visual_analysis_sync
 )
 from engine.agent import extract_form_data
@@ -88,8 +88,18 @@ def monitor_performance(func):
              return func(*args, **kwargs)
 
         # 2. Extraer provider/model para registro inicial (opcional)
-        provider = kwargs.get("llm_provider", settings.llm_provider)
-        model = kwargs.get("llm_model", settings.current_llm_model)
+        # Prioridad: kwargs > args[5]/args[6] (si es process_doc) > settings
+        provider = kwargs.get("llm_provider")
+        model = kwargs.get("llm_model")
+        
+        if not provider or not model:
+            # Si no vienen en kwargs, buscamos en args (recordando que args[0] es self y args[1] es task_id)
+            if len(args) > 6:
+                provider = args[5]
+                model = args[6]
+        
+        provider = provider or settings.llm_provider
+        model = model or settings.current_llm_model
         
         start_t = time.time()
         try:
@@ -181,60 +191,57 @@ def _set_stage(task_id: str, stage: str, status: str = None, provider: str = Non
         with db_engine.begin() as conn:
             # Si no se especifica status, forzamos PROCESSING si el stage avanza
             final_status = status or "PROCESSING"
-            final_provider = provider or settings.llm_provider
-            final_model = model or settings.current_llm_model
             
-            # Buscamos si ya tiene started_at, sino lo ponemos ahora
-            conn.execute(
-                text("""
-                    UPDATE idp_smart.document_extractions
-                    SET stage_current = :stage, 
-                        status = :status, 
-                        updated_at = NOW(),
-                        started_at = COALESCE(started_at, NOW()),
-                        llm_provider = :llm_provider, 
-                        llm_model = :llm_model
-                    WHERE task_id = :task_id
-                """),
-                {
-                    "stage": stage, 
-                    "status": final_status,
-                    "task_id": uuid.UUID(str(task_id)),
-                    "llm_provider": final_provider,
-                    "llm_model": final_model
-                },
-            )
+            # Solo actualizamos provider/model si vienen explícitos en la llamada
+            updates = {
+                "stage": stage, 
+                "status": final_status,
+                "task_id": uuid.UUID(str(task_id))
+            }
+            
+            sql = "UPDATE idp_smart.document_extractions SET stage_current = :stage, status = :status, updated_at = NOW(), started_at = COALESCE(started_at, NOW())"
+            
+            if provider:
+                sql += ", llm_provider = :llm_provider"
+                updates["llm_provider"] = provider
+            if model:
+                sql += ", llm_model = :llm_model"
+                updates["llm_model"] = model
+                
+            sql += " WHERE task_id = :task_id"
+            
+            conn.execute(text(sql), updates)
     except Exception as exc:
         print(f"No se pudo actualizar stage_current a {stage}: {exc}")
 
 
 @celery_app.task(name="process_doc", bind=True, max_retries=10)
 @monitor_performance
-def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_path: str, skip_vision: bool = False, llm_provider: str = None, llm_model: str = None, form_code: str = None):
+def process_doc(self, task_id: str, json_storage_object: str, pdf_storage_path: str, skip_vision: bool = False, llm_provider: str = None, llm_model: str = None, form_code: str = None):
     """
     Pipeline principal coordinado con caché de OCR y soporte mutimodal.
     """
-    pdf_minio_object = pdf_minio_path  # Inicialización inmediata
+    pdf_storage_object = pdf_storage_path  # Inicialización inmediata
     
-    if not pdf_minio_object:
-        log_event(db_engine, task_id, "ERROR", "pdf_minio_path es None o vacío. Abortando.")
+    if not pdf_storage_object:
+        log_event(db_engine, task_id, "ERROR", "pdf_storage_path es None o vacío. Abortando.")
         _set_stage(task_id, "ERROR", status="FAILED")
-        return {"status": "FAILED", "error": "pdf_minio_path requerido"}
-    if not json_minio_object:
-        log_event(db_engine, task_id, "ERROR", "json_minio_object es None o vacío. Abortando.")
+        return {"status": "FAILED", "error": "pdf_storage_path requerido"}
+    if not json_storage_object:
+        log_event(db_engine, task_id, "ERROR", "json_storage_object es None o vacío. Abortando.")
         _set_stage(task_id, "ERROR", status="FAILED")
-        return {"status": "FAILED", "error": "json_minio_object requerido"}
+        return {"status": "FAILED", "error": "json_storage_object requerido"}
 
     final_provider = llm_provider or settings.llm_provider
     final_model = llm_model or settings.current_llm_model
 
-    bucket_prefix = f"{settings.minio_bucket}/"
-    if json_minio_object.startswith(bucket_prefix):
-        json_minio_object = json_minio_object[len(bucket_prefix):]
-    if pdf_minio_object.startswith(bucket_prefix):
-        pdf_minio_object = pdf_minio_object[len(bucket_prefix):]
+    bucket_prefix = f"{settings.storage_bucket}/"
+    if json_storage_object.startswith(bucket_prefix):
+        json_storage_object = json_storage_object[len(bucket_prefix):]
+    if pdf_storage_object.startswith(bucket_prefix):
+        pdf_storage_object = pdf_storage_object[len(bucket_prefix):]
 
-    minio_client = get_minio_client()
+    storage_client = get_storage_client()
     doc_markdown = None
     docling_duration = 0.0
     ai_duration = 0.0
@@ -244,7 +251,7 @@ def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_path: str,
 
     act_short = None
     try:
-        log_event(db_engine, task_id, "INICIO", f"Extrayendo: {pdf_minio_object} con {final_provider}/{final_model}")
+        log_event(db_engine, task_id, "INICIO", f"Extrayendo: {pdf_storage_object} con {final_provider}/{final_model}")
         
         # Obtener dsactocorta para contexto legal
         with db_engine.connect() as conn:
@@ -257,7 +264,7 @@ def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_path: str,
             # Descargar PDF a temporal para calcular Hash
             import tempfile
             with tempfile.NamedTemporaryFile(delete=False) as tmp_pdf:
-                minio_client.fget_object(settings.minio_bucket, pdf_minio_object, tmp_pdf.name)
+                storage_client.fget_object(settings.storage_bucket, pdf_storage_object, tmp_pdf.name)
                 # Calcular Hash
                 sha256_hash = hashlib.sha256()
                 with open(tmp_pdf.name, "rb") as f:
@@ -275,8 +282,8 @@ def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_path: str,
             with r.lock(lock_key, timeout=1800):  # 30 minutos de lock
                 try:
                     # Volver a comprobar existencia DENTRO del lock
-                    minio_client.stat_object(settings.minio_bucket, md_cache_path)
-                    resp_md = minio_client.get_object(settings.minio_bucket, md_cache_path)
+                    storage_client.stat_object(settings.storage_bucket, md_cache_path)
+                    resp_md = storage_client.get_object(settings.storage_bucket, md_cache_path)
                     doc_markdown = resp_md.read().decode("utf-8")
                     p_count = doc_markdown.count("\f") + 1
                     skip_vision = True
@@ -288,13 +295,35 @@ def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_path: str,
         except Exception as e:
             logger.warning(f"Error en búsqueda de caché/lock: {e}")
 
+        # --- NUEVO: PRE-PROCESAMIENTO VERTEX GCS (SKIP OCR) ---
+        gcs_uri = None
+        if final_provider == "vertex" and settings.gcp_staging_bucket:
+             try:
+                 from google.cloud import storage
+                 if settings.gcp_credentials_json and os.path.exists(settings.gcp_credentials_json):
+                     gclient = storage.Client.from_service_account_json(settings.gcp_credentials_json)
+                 else: gclient = storage.Client()
+                 
+                 gbucket = gclient.bucket(settings.gcp_staging_bucket)
+                 blob_name = f"{task_id}/source.pdf"
+                 blob = gbucket.blob(blob_name)
+                 
+                 resp_minio = storage_client.get_object(settings.storage_bucket, pdf_storage_object)
+                 blob.upload_from_file(resp_minio, content_type='application/pdf')
+                 
+                 gcs_uri = f"gs://{settings.gcp_staging_bucket}/{blob_name}"
+                 skip_vision = True  # SALTAMOS DOCLING LOCAL
+                 log_event(db_engine, task_id, "VISION", f"⚡ NATIVE PDF DETECTED: Saltando OCR local. Usando GCS: {gcs_uri}")
+             except Exception as ge:
+                 log_event(db_engine, task_id, "WARN", f"Fallo subida a GCS: {ge}. Reintegrando OCR local.")
+
         # --- ETAPA 1: VISION / OCR ---
         if not skip_vision:
             _set_stage(task_id, "VISION", provider=final_provider, model=final_model)
             docling_start = time.time()
             with timed_stage(db_engine, task_id, "VISION", "Extracción Docling"):
-                log_event(db_engine, task_id, "VISION", f"Docling sobre {pdf_minio_object}")
-                doc_markdown, p_count, gpu_model = extract_markdown_from_minio(pdf_minio_object)
+                log_event(db_engine, task_id, "VISION", f"Docling sobre {pdf_storage_object}")
+                doc_markdown, p_count, gpu_model = extract_markdown_from_storage(pdf_storage_object)
             docling_duration = time.time() - docling_start
             
             if doc_markdown:
@@ -302,15 +331,15 @@ def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_path: str,
                     md_bytes = doc_markdown.encode("utf-8")
                     from io import BytesIO
                     # Guardar en carpeta de tarea
-                    minio_client.put_object(settings.minio_bucket, f"{task_id}/extracted.md", BytesIO(md_bytes), len(md_bytes))
+                    storage_client.put_object(settings.storage_bucket, f"{task_id}/extracted.md", BytesIO(md_bytes), len(md_bytes))
                     # Guardar en CACHE GLOBAL por HASH
                     if pdf_hash:
-                         minio_client.put_object(settings.minio_bucket, f"ocr_cache/{pdf_hash}.md", BytesIO(md_bytes), len(md_bytes))
+                         storage_client.put_object(settings.storage_bucket, f"ocr_cache/{pdf_hash}.md", BytesIO(md_bytes), len(md_bytes))
                          logger.info(f"💾 [OCR CACHE] Markdown persistido para Hash: {pdf_hash}")
                     
                     with db_engine.begin() as conn:
                         conn.execute(
-                            text("UPDATE idp_smart.document_extractions SET markdown_minio_path = :p, page_count = :pc WHERE task_id = :tid"),
+                            text("UPDATE idp_smart.document_extractions SET markdown_storage_path = :p, page_count = :pc WHERE task_id = :tid"),
                             {"p": f"{task_id}/extracted.md", "pc": p_count, "tid": uuid.UUID(str(task_id))}
                         )
                 except Exception as e:
@@ -323,19 +352,19 @@ def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_path: str,
         _set_stage(task_id, "AGENT", provider=final_provider, model=final_model)
         
         try:
-            resp_s = minio_client.get_object(settings.minio_bucket, json_minio_object)
+            resp_s = storage_client.get_object(settings.storage_bucket, json_storage_object)
             schema = json.loads(resp_s.read().decode("utf-8"))
         except Exception as e:
             log_event(db_engine, task_id, "ERROR", f"No se pudo cargar el esquema: {e}")
             raise e
 
         # Sampling multimodal
-        if final_provider in ["google", "openai"] and pdf_minio_object.lower().endswith((".pdf", ".tif")):
+        if final_provider in ["google", "openai"] and pdf_storage_object.lower().endswith((".pdf", ".tif")):
             try:
                 import fitz
                 import tempfile
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
-                    minio_client.fget_object(settings.minio_bucket, pdf_minio_object, tmp_pdf.name)
+                    storage_client.fget_object(settings.storage_bucket, pdf_storage_object, tmp_pdf.name)
                     doc = fitz.open(tmp_pdf.name)
                     indices = [0, 1, len(doc)//2, len(doc)-1] if len(doc) > 4 else range(len(doc))
                     for idx in indices:
@@ -352,8 +381,22 @@ def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_path: str,
 
         ai_start = time.time()
         with timed_stage(db_engine, task_id, "AGENT", f"Reasoning {final_model}"):
-            res = extract_form_data(markdown_content=doc_markdown, json_schema=schema, image_paths=image_paths, llm_provider=final_provider, llm_model=final_model, act_id=act_short)
+            res = extract_form_data(
+                markdown_content=doc_markdown, 
+                json_schema=schema, 
+                image_paths=image_paths, 
+                llm_provider=final_provider, 
+                llm_model=final_model, 
+                act_id=act_short,
+                gcs_uri=gcs_uri
+            )
             extracted_data = res.get("fields", {}) if isinstance(res, dict) else (res or {})
+            
+            # NUEVO: Si Vertex generó un transcript, usarlo
+            if res.get("markdown_transcript") and not doc_markdown:
+                doc_markdown = res["markdown_transcript"]
+                p_count = doc_markdown.count("\f") + 1
+                
         ai_duration = time.time() - ai_start
         
         for p in image_paths:
@@ -389,8 +432,8 @@ def process_doc(self, task_id: str, json_minio_object: str, pdf_minio_path: str,
             temp_rj = f"/tmp/{task_id}_rj.json"
             with open(temp_sj, "w") as f: json.dump(simplified, f)
             with open(temp_rj, "w") as f: json.dump(extracted_data, f)
-            upload_file_to_minio(temp_sj, f"{task_id}/simplified.json")
-            upload_file_to_minio(temp_rj, f"{task_id}/result.json")
+            upload_file_to_storage(temp_sj, f"{task_id}/simplified.json")
+            upload_file_to_storage(temp_rj, f"{task_id}/result.json")
             if os.path.exists(temp_sj): os.remove(temp_sj)
             if os.path.exists(temp_rj): os.remove(temp_rj)
         except Exception as e:

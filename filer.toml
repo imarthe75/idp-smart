@@ -1,0 +1,7 @@
+[notification.http]
+enabled = true
+endpoint = "http://api:8000/api/v1/internal/storage-event"
+# Notificar solo sobre creaciones de archivos (PDFs y JSONs)
+on_create = true
+on_delete = false
+on_rename = true

@@ -148,7 +148,7 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
         let aVal = a[sortConfig.key] || "";
         let bVal = b[sortConfig.key] || "";
         
-        if (sortConfig.key === 'pdf_minio_path') {
+        if (sortConfig.key === 'pdf_storage_path') {
            aVal = aVal?.split('/').pop() || '';
            bVal = bVal?.split('/').pop() || '';
         }
@@ -295,8 +295,8 @@ function HistoryView({ onNavigateBack, onShowProgress }) {
               <th onClick={() => requestSort('act_type')} style={{cursor:'pointer', userSelect:'none'}}>
                 Acto{getSortIcon('act_type')}
               </th>
-              <th onClick={() => requestSort('pdf_minio_path')} style={{cursor:'pointer', userSelect:'none'}}>
-                Documento{getSortIcon('pdf_minio_path')}
+              <th onClick={() => requestSort('pdf_storage_path')} style={{cursor:'pointer', userSelect:'none'}}>
+                Documento{getSortIcon('pdf_storage_path')}
               </th>
               <th onClick={() => requestSort('status')} style={{cursor:'pointer', userSelect:'none'}}>
                 Estado / Etapa{getSortIcon('status')}

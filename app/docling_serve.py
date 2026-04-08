@@ -32,7 +32,7 @@ async def extract(bucket: str, object_name: str):
     try:
         logger.info(f"📄 Procesando: {bucket}/{object_name}")
         # Re-utilizamos la lógica optimizada que ya tiene chunking y detección de hardware
-        markdown, total_pages, strategy = vision_engine.extract_markdown_from_minio_sync(object_name)
+        markdown, total_pages, strategy = vision_engine.extract_markdown_from_storage(object_name)
         
         return {
             "markdown": markdown,

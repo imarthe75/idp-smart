@@ -10,19 +10,18 @@ class DocumentExtraction(Base):
     Tabla principal de extracción de documentos.
     Almacena el JSON completo del sistema Java (extracted_data),
     un JSON simplificado solo con label/value (simplified_json),
-    y la ruta al markdown generado por Docling (markdown_minio_path).
+    y la ruta al markdown generado por Docling (markdown_storage_path).
     """
     __tablename__ = "document_extractions"
     __table_args__ = {"schema": "idp_smart"}
 
-    id                  = Column(Integer, primary_key=True, index=True)
-    task_id             = Column(UUID(as_uuid=True), unique=True, index=True, nullable=False)
+    task_id             = Column(UUID(as_uuid=True), primary_key=True, index=True, nullable=False)
     act_type            = Column(String(255), nullable=True)   # dsactocorta, ej: BI34
     expediente_id       = Column(String(255), nullable=True)   # ID del expediente o nombre de archivo
     form_code           = Column(String(255), nullable=True)   # lldeffrmpre de cfdeffrmpre
-    pdf_minio_path      = Column(String(1024), nullable=True)  # ruta del documento en MinIO
-    json_minio_path     = Column(String(1024), nullable=True)  # ruta del esquema JSON en MinIO
-    markdown_minio_path = Column(String(1024), nullable=True)  # ruta del markdown generado por Docling
+    pdf_storage_path      = Column(String(1024), nullable=True)  # ruta del documento en MinIO
+    json_storage_path     = Column(String(1024), nullable=True)  # ruta del esquema JSON en MinIO
+    markdown_storage_path = Column(String(1024), nullable=True)  # ruta del markdown generado por Docling
     additional_docs     = Column(JSONB, nullable=True)  # Lista de rutas MinIO para documentos adicionales
     parent_task_id      = Column(UUID(as_uuid=True), nullable=True)    # Referencia si se rehusó el markdown de otra tarea
     stage_current       = Column(String(100), nullable=True)   # etapa activa en el worker
