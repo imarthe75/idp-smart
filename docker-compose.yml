@@ -1,0 +1,70 @@
+services:
+  # 1. Processing API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: casmarts-idp-api
+    environment:
+      DB_HOST: casmarts-core-db-primary
+      DB_USER: admin
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: db_core_knowledge
+      VALKEY_URL: redis://casmarts-core-cache:6379/0
+      STORAGE_SECRET_KEY: casmarts_secure_pwd
+      LLM_PROVIDER: vertex
+      GOOGLE_APPLICATION_CREDENTIALS: /app/google-v-credentials.json
+      GCP_PROJECT_ID: project-9a4f42ad-5486-49f3-83b
+      GEMINI_MODEL: gemini-2.5-flash
+    volumes:
+      - ../consulta-smart/backend/app/core/credentials/project-9a4f42ad-5486-49f3-83b-ed714ffd9df1.json:/app/google-v-credentials.json:ro
+    ports:
+      - "8102:8000"
+    networks:
+      - aura-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    restart: always
+
+  # 2. Processing Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: casmarts-idp-worker
+    command: celery -A worker.celery_app worker --loglevel=info
+    environment:
+      DB_HOST: casmarts-core-db-primary
+      DB_USER: admin
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: db_core_knowledge
+      VALKEY_URL: redis://casmarts-core-cache:6379/0
+      STORAGE_SECRET_KEY: casmarts_secure_pwd
+      LLM_PROVIDER: vertex
+      GOOGLE_APPLICATION_CREDENTIALS: /app/google-v-credentials.json
+      GCP_PROJECT_ID: project-9a4f42ad-5486-49f3-83b
+      GEMINI_MODEL: gemini-2.5-flash
+      DOCLING_SERVER_URL: http://casmarts-core-docling:5001/extract
+      C_FORCE_ROOT: "1"
+    volumes:
+      - ../consulta-smart/backend/app/core/credentials/project-9a4f42ad-5486-49f3-83b-ed714ffd9df1.json:/app/google-v-credentials.json:ro
+    networks:
+      - aura-network
+    depends_on:
+      - api
+    restart: always
+
+  # 3. UI Dashboard
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: casmarts-idp-frontend
+    networks:
+      - aura-network
+    ports:
+      - "8101:5173"
+    restart: always
+
+networks:
+  aura-network:
+    external: true

@@ -1,0 +1,10 @@
+[
+  {
+    "concurrency": 4,
+    "total_time": 1283.4162957668304,
+    "total_pages": 61,
+    "throughput_pg_sec": 0.04752939494472681,
+    "success_rate": 0.1111111111111111,
+    "timestamp": 1774931221.336722
+  }
+]
