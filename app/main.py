@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, File, UploadFile, BackgroundTasks, Form, Request, HTTPException
+from fastapi import FastAPI, Depends, File, UploadFile, BackgroundTasks, Form, Request, HTTPException, Body
 import logging
 import json
 from fastapi.responses import StreamingResponse
@@ -103,6 +103,73 @@ async def get_hardware_benchmarks(
     result = await db.execute(query)
     benchmarks = [dict(row._mapping) for row in result.fetchall()]
     return {"total": len(benchmarks), "benchmarks": benchmarks}
+
+# --- ADMINISTRACIÓN INTELIGENTE ---
+
+@app.get("/api/v1/admin/schemas", tags=["Administración"])
+async def list_admin_schemas(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Obtiene todos los esquemas de extracción para edición."""
+    query = text("SELECT form_code, dsacto, jsconfforma FROM idp_smart.act_forms_catalog ORDER BY form_code ASC")
+    result = await db.execute(query)
+    return {"schemas": [dict(row._mapping) for row in result.fetchall()]}
+
+@app.post("/api/v1/admin/schemas", tags=["Administración"])
+async def update_admin_schema(
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Actualiza un esquema de extracción JSON."""
+    form_code = data.get("form_code")
+    jsconfforma = data.get("jsconfforma")
+    
+    if not form_code or not jsconfforma:
+        raise HTTPException(status_code=400, detail="form_code y jsconfforma son requeridos")
+        
+    query = text("""
+        UPDATE idp_smart.act_forms_catalog 
+        SET jsconfforma = :js, updated_at = NOW() 
+        WHERE form_code = :code
+    """)
+    await db.execute(query, {"js": json.dumps(jsconfforma), "code": form_code})
+    await db.commit()
+    return {"status": "success", "message": f"Esquema {form_code} actualizado"}
+
+@app.post("/api/v1/admin/generate-prompt", tags=["Administración"])
+async def idp_generate_ai_design(
+    request: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Usa el motor de IA para proponer un esquema JSON basado en el tema.
+    """
+    topic = request.get("topic", "General")
+    
+    # Mock/Simple logic: En una implementación real, llamamos al LLM aquí.
+    # Como IDP usa DSPy, el 'prompt' es la firma (Signature).
+    
+    suggested_schema = {
+        "form_code": "NEW",
+        "dsacto": f"Extracción de {topic}",
+        "jsconfforma": {
+            "containers": [
+                {
+                    "label": f"Datos de {topic}",
+                    "controls": [
+                        {"label": "Folio/Referencia", "type": "text", "keyRelacion": "folio"},
+                        {"label": "Fecha", "type": "fecha", "keyRelacion": "fecha"},
+                        {"label": "Monto", "type": "numeric", "keyRelacion": "monto"}
+                    ]
+                }
+            ]
+        }
+    }
+    
+    return {"prompt": f"Firma DSPy sugerida para {topic}", "schema": suggested_schema}
 
 @app.post("/api/v1/process", tags=["Procesamiento"])
 async def process_document(
