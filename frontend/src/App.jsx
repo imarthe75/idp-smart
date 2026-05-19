@@ -17,7 +17,7 @@ const BASE_PATH = import.meta.env.BASE_URL || '/idp-smart/';
 const API_BASE = window.location.origin + BASE_PATH.replace(/\/$/, '');
 
 const oidcConfig = {
-  authority: window.location.origin + "/application/o/idp-smart/",
+  authority: "https://auth.casmart.internal/application/o/idp-smart/",
   client_id: "idp-smart",
   redirect_uri: window.location.origin + BASE_PATH,
   post_logout_redirect_uri: window.location.origin + BASE_PATH,
@@ -668,7 +668,19 @@ function AppContent() {
   }
 
   if (auth.isLoading) {
-    return <div className="loading-screen">Cargando identidad...</div>
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-[#0f172a] relative overflow-hidden font-sans">
+        {/* Background Blobs for Premium Feel */}
+        <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0">
+          <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px]"></div>
+          <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/5 rounded-full blur-[100px]"></div>
+        </div>
+        <div className="flex flex-col items-center gap-4 text-white relative z-10">
+          <Loader className="animate-spin text-blue-400" size={48} />
+          <p className="font-semibold animate-pulse text-blue-400 tracking-wider text-sm">Sincronizando Identidad CASMARTS...</p>
+        </div>
+      </div>
+    )
   }
 
   if (!auth.isAuthenticated) {
@@ -681,18 +693,22 @@ function AppContent() {
             align-items: center;
             justify-content: center;
             padding: 20px;
-            background: radial-gradient(circle at center, #003a66 0%, #002A4C 100%);
+            background: #0f172a;
             font-family: 'Outfit', sans-serif;
+            position: relative;
+            overflow: hidden;
           }
           .login-card {
-            background: white;
+            background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             padding: 50px;
-            border-radius: 40px;
+            border-radius: 32px;
             width: 100%;
             max-width: 450px;
             text-align: center;
-            box-shadow: none !important;
-            border: none;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+            z-index: 10;
           }
           .logo-box {
             display: flex;
@@ -703,18 +719,19 @@ function AppContent() {
             width: 110px;
             height: 110px;
             object-fit: contain;
+            filter: brightness(1.1);
           }
           .login-h1 {
             font-size: 36px;
             font-weight: 800;
-            color: #002A4C;
+            color: white;
             margin-bottom: 10px;
             letter-spacing: -1px;
           }
           .login-p {
             font-size: 10px;
             font-weight: 700;
-            color: #BDC3C7;
+            color: #38bdf8;
             letter-spacing: 3px;
             text-transform: uppercase;
             margin-bottom: 40px;
@@ -722,10 +739,10 @@ function AppContent() {
           .login-btn {
             width: 100%;
             padding: 18px;
-            background: #002A4C;
+            background: #2563eb;
             color: white;
             border: none;
-            border-radius: 12px;
+            border-radius: 14px;
             font-weight: 700;
             cursor: pointer;
             display: flex;
@@ -733,17 +750,51 @@ function AppContent() {
             justify-content: center;
             gap: 10px;
             transition: all 0.2s;
+            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
           }
-          .login-btn:hover { background: #003a66; }
+          .login-btn:hover { 
+            background: #1d4ed8; 
+            box-shadow: 0 10px 20px -3px rgba(37, 99, 235, 0.5);
+            transform: translateY(-1px);
+          }
+          .login-btn:active {
+            transform: translateY(1px);
+          }
           .login-footer {
             margin-top: 50px;
             padding-top: 30px;
-            border-top: 1px solid #f1f5f9;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
           }
-          .footer-logo { height: 16px; opacity: 0.2; margin-bottom: 10px; grayscale: 100%; }
-          .footer-text { font-size: 9px; color: #cbd5e1; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; }
+          .footer-logo { height: 16px; opacity: 0.4; margin-bottom: 10px; filter: grayscale(100%) invert(1); }
+          .footer-text { font-size: 9px; color: rgba(255, 255, 255, 0.3); font-weight: 800; letter-spacing: 4px; text-transform: uppercase; }
+          .bg-blob-1 {
+            position: absolute;
+            top: -10%;
+            right: -10%;
+            width: 50%;
+            height: 50%;
+            background: rgba(59, 130, 246, 0.1);
+            border-radius: 50%;
+            filter: blur(120px);
+            pointer-events: none;
+            z-index: 1;
+          }
+          .bg-blob-2 {
+            position: absolute;
+            bottom: -10%;
+            left: -10%;
+            width: 40%;
+            height: 40%;
+            background: rgba(16, 185, 129, 0.05);
+            border-radius: 50%;
+            filter: blur(100px);
+            pointer-events: none;
+            z-index: 1;
+          }
         `}</style>
         <div className="login-container">
+          <div className="bg-blob-1"></div>
+          <div className="bg-blob-2"></div>
           <div className="login-card">
             <div className="logo-box">
               <img src={appLogo} alt="Logo" className="logo-img" />
@@ -757,8 +808,8 @@ function AppContent() {
             </button>
 
             <div style={{ marginTop: '25px' }}>
-              <a href="https://arquitectura.casmart.internal/if/flow/password-recovery/"
-                style={{ fontSize: '12px', color: '#002A4C80', textDecoration: 'none', fontWeight: '600' }}>
+              <a href="https://auth.casmart.internal/if/flow/password-recovery/"
+                style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)', textDecoration: 'none', fontWeight: '600' }}>
                 ¿Olvidaste tu contraseña?
               </a>
             </div>
