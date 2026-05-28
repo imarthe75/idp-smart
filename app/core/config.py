@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     force_cpu: bool = False  # False = detección automática
 
     # ── Authentik OIDC ──────────────────────────────────────────────────────────
-    authentik_url: str = "https://arquitectura.casmart.internal"
+    authentik_url: str = "https://auth.casmart.internal"
     authentik_client_id: str = "idp-smart"
     authentik_internal_url: str = "http://casmarts-core-authentik-server:9000"
 

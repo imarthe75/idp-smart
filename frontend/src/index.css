@@ -1,26 +1,114 @@
 @import "tailwindcss";
 
 @theme {
-  --color-idp-blue: #2c5282;
-  --color-idp-accent: #4299e1;
+  --color-idp-blue: #1a3a5c;
+  --color-idp-accent: #142e4a;
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap');
 
 :root {
-  --primary:    #002A4C;
-  --primary-h:  #003a66;
-  --accent:     #BDC3C7;
-  --bg:         #f8fafc;
-  --surface:    #FFFFFF;
-  --border:     rgba(0, 42, 76, 0.1);
-  --success:    #10b981;
-  --error:      #ef4444;
-  --warn:       #f59e0b;
-  --text:       #002A4C;
-  --muted:      #64748b;
-  --radius:     24px;
-  --shadow:     0 4px 24px rgba(0,0,0,.06);
+  /* --- CÍVIKA DESIGN SYSTEM TOKENS --- */
+  /* Primitivos */
+  --primitive-gray-50:  #f8fafc;
+  --primitive-gray-100: #f1f5f9;
+  --primitive-gray-200: #e2e8f0;
+  --primitive-gray-300: #cbd5e1;
+  --primitive-gray-400: #94a3b8;
+  --primitive-gray-500: #64748b;
+  --primitive-gray-600: #475569;
+  --primitive-gray-700: #334155;
+  --primitive-gray-800: #1e293b;
+  --primitive-gray-900: #0f172a;
+
+  --primitive-green-600: #16a34a;  --primitive-green-50:  #f0fdf4;  --primitive-green-100: #dcfce7;
+  --primitive-red-600:   #dc2626;  --primitive-red-50:    #fef2f2;  --primitive-red-100:   #fee2e2;
+  --primitive-amber-600: #d97706;  --primitive-amber-50:  #fffbeb;  --primitive-amber-100: #fef3c7;
+  --primitive-blue-700:  #1d4ed8;  --primitive-blue-50:   #eff6ff;  --primitive-blue-100:  #dbeafe;
+
+  --primitive-font-sans: 'DM Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --primitive-font-mono: 'DM Mono', 'Cascadia Code', 'Consolas', monospace;
+
+  /* Radios de borde */
+  --primitive-radius-none: 0px;
+  --primitive-radius-sm:   4px;
+  --primitive-radius-md:   8px;   /* Átomos */
+  --primitive-radius-lg:   14px;  /* Organismos */
+  --primitive-radius-xl:   20px;
+  --primitive-radius-full: 9999px;
+
+  /* WCAG Touch targets */
+  --primitive-touch-sm:   32px;
+  --primitive-touch-base: 44px;
+  --primitive-touch-lg:   48px;
+
+  /* Semánticos */
+  --bg-page:           var(--primitive-gray-50);
+  --bg-surface:        #ffffff;
+  --bg-input:          #ffffff;
+  --bg-input-disabled: var(--primitive-gray-100);
+  --bg-table-header:   var(--primitive-gray-50);
+
+  --text-primary:   var(--primitive-gray-800);
+  --text-secondary: var(--primitive-gray-600);
+  --text-tertiary:  var(--primitive-gray-500);
+  --text-disabled:  var(--primitive-gray-400);
+  --text-inverse:   #ffffff;
+
+  --border-subtle:  var(--primitive-gray-100);
+  --border-default: var(--primitive-gray-300);
+  --border-strong:  var(--primitive-gray-400);
+
+  --color-success-text:   var(--primitive-green-600);
+  --color-success-bg:     var(--primitive-green-50);
+  --color-success-border: var(--primitive-green-100);
+  --color-error-text:     var(--primitive-red-600);
+  --color-error-bg:       var(--primitive-red-50);
+  --color-error-border:   var(--primitive-red-100);
+  --color-warning-text:   var(--primitive-amber-600);
+  --color-warning-bg:     var(--primitive-amber-50);
+  --color-warning-border: var(--primitive-amber-100);
+  --color-info-text:      var(--primitive-blue-700);
+  --color-info-bg:        var(--primitive-blue-50);
+  --color-info-border:    var(--primitive-blue-100);
+
+  --font-body:      var(--primitive-font-sans);
+  --font-code:      var(--primitive-font-mono);
+
+  --radius-atom:      var(--primitive-radius-md);
+  --radius-organism:  var(--primitive-radius-lg);
+  --radius-container: var(--primitive-radius-xl);
+  --radius-pill:      var(--primitive-radius-full);
+
+  --height-btn-sm:   var(--primitive-touch-sm);
+  --height-btn-base: var(--primitive-touch-base);
+  --height-btn-lg:   var(--primitive-touch-lg);
+  --height-input:    var(--primitive-touch-base);
+
+  --shadow-card:  0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-modal: 0 12px 32px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.06);
+
+  /* Marca CÍVIKA */
+  --brand:       #1a3a5c;
+  --brand-hover: #142e4a;
+  --brand-light: rgba(26, 58, 92, 0.08);
+  --brand-glow:  rgba(26, 58, 92, 0.16);
+  --brand-on:    #ffffff;
+
+  /* Mapeos semánticos de compatibilidad para IDP */
+  --primary:    var(--brand);
+  --primary-h:  var(--brand-hover);
+  --accent:     var(--border-strong);
+  --bg:         var(--bg-page);
+  --surface:    var(--bg-surface);
+  --border:     var(--border-subtle);
+  --success:    var(--color-success-text);
+  --error:      var(--color-error-text);
+  --warn:       var(--color-warning-text);
+  --text:       var(--text-primary);
+  --muted:      var(--text-secondary);
+  --radius:     var(--radius-organism);
+  --shadow:     var(--shadow-card);
 }
 
 *, *::before, *::after { 
@@ -30,7 +118,7 @@
 }
 
 body {
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-body), sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;

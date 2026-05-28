@@ -15,6 +15,9 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /app/google-v-credentials.json
       GCP_PROJECT_ID: project-9a4f42ad-5486-49f3-83b
       GEMINI_MODEL: gemini-2.5-flash
+      AUTHENTIK_URL: https://auth.casmart.internal
+      AUTHENTIK_CLIENT_ID: idp-smart
+      AUTHENTIK_INTERNAL_URL: http://casmarts-core-authentik-server:9000
     volumes:
     - ../consulta-smart/backend/app/core/credentials/project-9a4f42ad-5486-49f3-83b-ed714ffd9df1.json:/app/google-v-credentials.json:ro
     ports:
@@ -46,6 +49,9 @@ services:
       GEMINI_MODEL: gemini-2.5-flash
       DOCLING_SERVER_URL: http://casmarts-core-docling:5001/extract
       C_FORCE_ROOT: '1'
+      AUTHENTIK_URL: https://auth.casmart.internal
+      AUTHENTIK_CLIENT_ID: idp-smart
+      AUTHENTIK_INTERNAL_URL: http://casmarts-core-authentik-server:9000
     volumes:
     - ../consulta-smart/backend/app/core/credentials/project-9a4f42ad-5486-49f3-83b-ed714ffd9df1.json:/app/google-v-credentials.json:ro
     networks:
